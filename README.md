@@ -140,10 +140,11 @@ All data is stored in `~/MemoryWatch/`:
    nohup ./memory_watcher.sh > /dev/null 2>&1 &
    ```
 
-3. **Build GUI app:**
+3. **Build CLI tool:**
    ```bash
    ./build_app.sh
-   open MemoryWatchApp/build/Build/Products/Release/MemoryWatch.app
+   # Then run
+   ./MemoryWatchApp/.build/release/MemoryWatch
    ```
 
 4. **Generate reports:**
@@ -213,7 +214,7 @@ The analyzer estimates SSD writes from swap usage:
 |-----------|-----------|--------------|----------|
 | `memory_watcher.sh` | <1% | ~5MB | Minimal (30s interval) |
 | `analyze.py` | <5% (when running) | ~20MB | Read-only |
-| SwiftUI App | <2% | ~30MB | None |
+| CLI Tool | <1% | ~3MB | Read-only (instant) |
 
 The monitoring system is designed to have minimal overhead while providing comprehensive insights.
 
@@ -234,9 +235,9 @@ The monitoring system is designed to have minimal overhead while providing compr
 - Reduce `TOP_N` (fewer processes to track)
 - Disable leak checking: `LEAK_CHECK_INTERVALS=0`
 
-### GUI app won't build
-- Ensure Xcode is installed: `xcode-select --install`
-- Open project in Xcode first to resolve any signing issues
+### CLI tool won't build
+- Install Xcode Command Line Tools: `xcode-select --install`
+- Check Swift version: `swift --version` (requires 5.7+)
 - Check macOS version (requires 13.0+)
 
 ## Architecture
@@ -270,18 +271,18 @@ The monitoring system is designed to have minimal overhead while providing compr
 └─────────────────────────────────────────────────────┘
 ```
 
-## Why SwiftUI over Golang Fyne?
+## Why Swift CLI over Golang or Python?
 
-We chose SwiftUI for the GUI because:
+We chose Swift for the CLI tool because:
 
 1. **Native Performance** - Direct access to macOS system APIs with zero overhead
-2. **Lightweight** - Compiled binary, no runtime dependencies
-3. **Efficient Rendering** - Metal-accelerated graphics
-4. **System Integration** - Menu bar, notifications, native look & feel
-5. **Low Battery Impact** - Optimized for Apple Silicon
+2. **Lightweight** - Single compiled binary (~3MB), no runtime dependencies
+3. **System Integration** - Full access to task_info, vm_statistics, and process APIs
+4. **Fast Startup** - Instant execution, no interpreter startup time
+5. **Type Safety** - Compile-time guarantees for system-level code
 6. **No Bloat** - Zero JavaScript, pure native code
 
-Fyne would add Go runtime overhead and doesn't integrate as deeply with macOS.
+Go would work but lacks direct macOS API access. Python requires interpreter overhead.
 
 ## Contributing
 
