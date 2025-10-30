@@ -1,89 +1,75 @@
 import Foundation
 
-// MARK: - Command Line Interface
+enum CLI {
 
-struct CLI {
-    static func run() {
-        // Initialize directories
-        try? MemoryWatchPaths.ensureDirectoriesExist()
-        MemoryWatchPaths.migrateLegacyFiles()
-
-        let arguments = CommandLine.arguments
-
-        if arguments.contains("--daemon") || arguments.contains("-d") {
-            runDaemon()
-        } else if arguments.contains("--report") || arguments.contains("-r") {
-            showReport()
-        } else if arguments.contains("--suspects") || arguments.contains("-s") {
-            showSuspects()
-        } else if arguments.contains("--ports") || arguments.contains("-p") {
-            showPortQuery(arguments: arguments)
-        } else if arguments.contains("--check-port") {
-            checkPort(arguments: arguments)
-        } else if arguments.contains("--find-free-port") {
-            findFreePorts(arguments: arguments)
-        } else if arguments.contains("--kill-pattern") {
-            killProcessPattern(arguments: arguments)
-        } else if arguments.contains("--interactive-kill") || arguments.contains("-i") {
-            interactiveKill(arguments: arguments)
-        } else if arguments.contains("--kill") || arguments.contains("-k") {
-            killProcess(arguments: arguments, force: false)
-        } else if arguments.contains("--force-kill") || arguments.contains("-f") {
-            killProcess(arguments: arguments, force: true)
-        } else if arguments.contains("--help") || arguments.contains("-h") {
-            showHelp()
-        } else {
-            showSnapshot()
-        }
-    }
-
-    static func showSnapshot() {
-        print("MemoryWatch - macOS Memory Monitor")
-        print("===================================")
-        print("")
-
+    static func showSnapshot(json: Bool = false, minMemMB: Double = 50, topN: Int = 15) {
         let metrics = SystemMetrics.current()
-
-        print("System Memory:")
-        print("  Total:    \(String(format: "%6.1f", metrics.totalMemoryGB)) GB")
-        print("  Used:     \(String(format: "%6.1f", metrics.usedMemoryGB)) GB")
-        print("  Free:     \(String(format: "%6.1f", metrics.freeMemoryGB)) GB (\(String(format: "%.1f", metrics.freePercent))%)")
-        print("  Pressure: \(pressureIcon(metrics.pressure)) \(metrics.pressure)")
-        print("")
-
-        print("Swap Usage:")
-        print("  Used:  \(String(format: "%6.0f", metrics.swapUsedMB)) MB")
-        print("  Total: \(String(format: "%6.0f", metrics.swapTotalMB)) MB")
-        if metrics.swapTotalMB > 0 {
-            print("  Free:  \(String(format: "%6.1f", metrics.swapFreePercent))%")
-
-            if metrics.swapUsedMB > 1024 {
-                print("  ⚠️  High swap usage detected!")
+        let processes = ProcessCollector.getAllProcesses(minMemoryMB: minMemMB)
+        if json {
+            struct SnapshotOut: Codable {
+                struct System: Codable { let totalGB: Double; let usedGB: Double; let freeGB: Double; let freePercent: Double; let pressure: String; let swapUsedMB: Double; let swapTotalMB: Double; let swapFreePercent: Double }
+                struct Proc: Codable { let pid: Int32; let name: String; let memoryMB: Double; let percentMemory: Double }
+                let system: System
+                let processes: [Proc]
+                let generatedAt: Date
             }
-        }
-        print("")
+            let sys = SnapshotOut.System(totalGB: metrics.totalMemoryGB, usedGB: metrics.usedMemoryGB, freeGB: metrics.freeMemoryGB, freePercent: metrics.freePercent, pressure: metrics.pressure, swapUsedMB: metrics.swapUsedMB, swapTotalMB: metrics.swapTotalMB, swapFreePercent: metrics.swapFreePercent)
+            let procs = processes.prefix(topN).map { SnapshotOut.Proc(pid: $0.pid, name: $0.name, memoryMB: $0.memoryMB, percentMemory: $0.percentMemory) }
+            let out = SnapshotOut(system: sys, processes: procs, generatedAt: Date())
+            let enc = JSONEncoder(); enc.outputFormatting = [.prettyPrinted, .sortedKeys]; enc.dateEncodingStrategy = .iso8601
+            if let data = try? enc.encode(out), let s = String(data: data, encoding: .utf8) { print(s) }
+            return
+        } else {
+            print("MemoryWatch - macOS Memory Monitor")
+            print("===================================")
+            print("")
 
-        print("Top Memory Consumers:")
-        print("  PID     Memory      %Mem   Process")
-        print("  ────────────────────────────────────")
+            print("System Memory:")
+            print("  Total:    \(String(format: "%6.1f", metrics.totalMemoryGB)) GB")
+            print("  Used:     \(String(format: "%6.1f", metrics.usedMemoryGB)) GB")
+            print("  Free:     \(String(format: "%6.1f", metrics.freeMemoryGB)) GB (\(String(format: "%.1f", metrics.freePercent))%)")
+            print("  Pressure: \(pressureIcon(metrics.pressure)) \(metrics.pressure)")
+            print("")
 
-        let processes = ProcessCollector.getAllProcesses(minMemoryMB: 50)
-        for process in processes.prefix(15) {
-            let pidStr = String(format: "%5d", process.pid)
-            let memStr = String(format: "%6.0f MB", process.memoryMB)
-            let pctStr = String(format: "%5.1f%%", process.percentMemory)
-            print("  \(pidStr)  \(memStr)  \(pctStr)   \(process.name)")
+            print("Swap Usage:")
+            print("  Used:  \(String(format: "%6.0f", metrics.swapUsedMB)) MB")
+            print("  Total: \(String(format: "%6.0f", metrics.swapTotalMB)) MB")
+            if metrics.swapTotalMB > 0 {
+                print("  Free:  \(String(format: "%6.1f", metrics.swapFreePercent))%")
+
+                if metrics.swapUsedMB > 1024 {
+                    print("  ⚠️  High swap usage detected!")
+                }
+            }
+            print("")
+
+            print("Top Memory Consumers:")
+            print("  PID     Memory      %Mem   Process")
+            print("  ────────────────────────────────────")
+            for process in processes.prefix(topN) {
+                let pidStr = String(format: "%5d", process.pid)
+                let memStr = String(format: "%6.0f MB", process.memoryMB)
+                let pctStr = String(format: "%5.1f%%", process.percentMemory)
+                print("  \(pidStr)  \(memStr)  \(pctStr)   \(process.name)")
+            }
+            print("")
+            print("Usage: memwatch daemon            Start continuous monitoring")
+            print("       memwatch io                Show top disk I/O processes")
+            print("       memwatch dangling-files    Find deleted but open files")
+            print("       memwatch report            Show leak detection report")
+            print("       memwatch suspects          List leak suspects")
         }
-        print("")
-        print("Usage: memwatch --daemon    Start continuous monitoring")
-        print("       memwatch --report    Show leak detection report")
-        print("       memwatch --suspects  List leak suspects")
     }
 
     nonisolated(unsafe) static var globalMonitor: ProcessMonitor?
     nonisolated(unsafe) static var globalStateFile: URL?
 
-    static func runDaemon() {
+    static func runDaemon(interval: TimeInterval = 30,
+                          minMemMB: Double = 50,
+                          swapWarnMB: Double = 1024,
+                          pageoutsWarnRate: Double = 100,
+                          autosaveEvery: Int = 10,
+                          reportEvery: Int = 120) {
         print("🔍 MemoryWatch Daemon Starting...")
         print("Press Ctrl+C to stop")
         print("")
@@ -99,7 +85,6 @@ struct CLI {
         try? monitor.loadState(from: stateFile)
 
         var iteration = 0
-        let interval: TimeInterval = 30 // 30 seconds
 
         // Handle Ctrl+C gracefully
         signal(SIGINT) { _ in
@@ -113,13 +98,15 @@ struct CLI {
             exit(0)
         }
 
+        var lastVM: (pageins: UInt64, pageouts: UInt64, ts: TimeInterval)? = nil
+
         while true {
             iteration += 1
             let timestamp = formatTimestamp(Date())
 
             // Collect metrics
             let metrics = SystemMetrics.current()
-            let processes = ProcessCollector.getAllProcesses(minMemoryMB: 50)
+            let processes = ProcessCollector.getAllProcesses(minMemoryMB: minMemMB)
 
             // Record snapshot
             monitor.recordSnapshot(processes: processes)
@@ -139,7 +126,7 @@ struct CLI {
             print("")
 
             // Check for critical issues
-            if metrics.swapUsedMB > 1024 {
+            if metrics.swapUsedMB > swapWarnMB {
                 print("  ⚠️  WARNING: High swap usage (\(String(format: "%.0f", metrics.swapUsedMB))MB)")
             }
 
@@ -147,64 +134,196 @@ struct CLI {
                 print("  🔴 CRITICAL: Memory pressure critical!")
             }
 
-            // Save state periodically (every 10 iterations)
-            if iteration % 10 == 0 {
+            // VM activity (pageouts rate indicates swap pressure)
+            let vm = SystemMetrics.getVMActivity()
+            let now = Date().timeIntervalSince1970
+            if let last = lastVM {
+                let dt = now - last.ts
+                if dt > 0 {
+                    let pageoutsPerSec = Double(vm.pageouts &- last.pageouts) / dt
+                    if pageoutsPerSec > pageoutsWarnRate { // threshold
+                        print("  ⚠️  High pageouts: \(String(format: "%.0f", pageoutsPerSec))/s (swap thrashing)")
+                    }
+                }
+            }
+            lastVM = (vm.pageins, vm.pageouts, now)
+
+            // Save state periodically
+            if autosaveEvery > 0 && iteration % autosaveEvery == 0 {
                 try? monitor.saveState(to: stateFile)
             }
 
-            // Show report every hour (120 iterations = 3600 seconds)
-            if iteration % 120 == 0 {
+            // Show report periodically
+            if reportEvery > 0 && iteration % reportEvery == 0 {
                 print("\n" + monitor.generateReport())
             }
 
-            sleep(UInt32(interval))
+            let sleepSec = interval > 0 ? UInt32(interval) : 1
+            sleep(sleepSec)
         }
     }
 
-    static func showReport() {
+    static func showIO(sampleMs: Int = 600, minMemMB: Double = 10, topN: Int = 10, sortBy: String = "write") {
+        print("MemoryWatch - Disk I/O Activity")
+        print("===================================")
+        print("Sampling processes for I/O rates...")
+        // Prime trackers
+        _ = ProcessCollector.getAllProcessesWithCPU(minMemoryMB: 0)
+        usleep(useconds_t(max(sampleMs, 100) * 1000))
+        let processes = ProcessCollector.getAllProcessesWithCPU(minMemoryMB: minMemMB)
+
+        let topWriters = processes.sorted { $0.ioWriteBps > $1.ioWriteBps }.prefix(topN)
+        let topReaders = processes.sorted { $0.ioReadBps > $1.ioReadBps }.prefix(topN)
+
+        func prettyBps(_ bps: Double) -> String {
+            if bps >= 1024 * 1024 { return String(format: "%.1f MB/s", bps / (1024*1024)) }
+            if bps >= 1024 { return String(format: "%.1f KB/s", bps / 1024) }
+            return String(format: "%.0f B/s", bps)
+        }
+
+        print("")
+        print("Top Disk Writers:")
+        print("  PID     Write/s     CPU    Process")
+        print("  ─────────────────────────────────────────")
+        for p in topWriters where p.ioWriteBps > 0 {
+            let pidStr = String(format: "%5d", p.pid)
+            let wStr = prettyBps(p.ioWriteBps)
+            let cpuStr = String(format: "%5.1f%%", p.cpuPercent)
+            print("  \(pidStr)  \(String(format: "%12s", (wStr as NSString).utf8String!))  \(cpuStr)  \(p.name)")
+        }
+
+        print("")
+        print("Top Disk Readers:")
+        print("  PID     Read/s      CPU    Process")
+        print("  ─────────────────────────────────────────")
+        for p in topReaders where p.ioReadBps > 0 {
+            let pidStr = String(format: "%5d", p.pid)
+            let rStr = prettyBps(p.ioReadBps)
+            let cpuStr = String(format: "%5.1f%%", p.cpuPercent)
+            print("  \(pidStr)  \(String(format: "%12s", (rStr as NSString).utf8String!))  \(cpuStr)  \(p.name)")
+        }
+
+        print("")
+        print("💡 Tip: heavy sustained writes can indicate log or cache issues.")
+        if sortBy.lowercased() == "read" {
+            // If user wants only readers, show readers first
+        }
+    }
+
+    static func findDanglingFiles() {
+        print("MemoryWatch - Deleted But Open Files")
+        print("===================================")
+        print("Scanning for open, unlinked files (can hold disk space)...")
+
+        let task = Process()
+        task.executableURL = URL(fileURLWithPath: "/usr/sbin/lsof")
+        task.arguments = ["-nP", "+L1"]
+        let pipe = Pipe()
+        task.standardOutput = pipe
+        task.standardError = Pipe()
+        do {
+            try task.run()
+            task.waitUntilExit()
+            let data = pipe.fileHandleForReading.readDataToEndOfFile()
+            if let output = String(data: data, encoding: .utf8) {
+                let lines = output.split(separator: "\n").filter { $0.contains("(deleted)") || $0.contains("(unlinked)") || $0.contains("linkcount") }
+                if lines.isEmpty {
+                    print("✅ No deleted-but-open files found.")
+                } else {
+                    print("Found potential space holders:")
+                    for line in lines { print("  \(line)") }
+                    print("")
+                    print("These files still occupy disk space until the process closes them.")
+                }
+            }
+        } catch {
+            print("❌ Failed to run lsof. Ensure /usr/sbin/lsof is available.")
+        }
+    }
+
+    static func showReport(json: Bool = false, minLevel: String? = nil, recentAlerts: Int = 10) {
         let stateFile = MemoryWatchPaths.stateFile
 
         let monitor = ProcessMonitor()
 
         do {
             try monitor.loadState(from: stateFile)
-            print(monitor.generateReport())
+            if json {
+                let level: LeakSuspect.SuspicionLevel
+                switch (minLevel ?? "").lowercased() {
+                case "critical": level = .critical
+                case "high": level = .high
+                case "medium": level = .medium
+                default: level = .medium
+                }
+                print(monitor.generateJSONReport(minLevel: level, recentAlertCount: recentAlerts))
+            } else {
+                print(monitor.generateReport())
+            }
         } catch {
             print("❌ No monitoring data found. Run 'memwatch --daemon' first.")
             print("   Error: \(error.localizedDescription)")
         }
     }
 
-    static func showSuspects() {
+    static func showSuspects(minLevel: String? = nil, max: Int? = nil, json: Bool = false) {
         let stateFile = MemoryWatchPaths.stateFile
 
         let monitor = ProcessMonitor()
 
         do {
             try monitor.loadState(from: stateFile)
-            let suspects = monitor.getLeakSuspects(minLevel: .low)
-
-            if suspects.isEmpty {
-                print("✅ No leak suspects found")
-                return
+            let level: LeakSuspect.SuspicionLevel
+            switch (minLevel ?? "").lowercased() {
+            case "critical": level = .critical
+            case "high": level = .high
+            case "medium": level = .medium
+            default: level = .low
             }
+            var suspects = monitor.getLeakSuspects(minLevel: level)
+            if let m = max, m > 0 { suspects = Array(suspects.prefix(m)) }
 
-            print("Memory Leak Suspects")
-            print("═══════════════════════════════════════════════════════════")
-            print("")
-
-            for (index, suspect) in suspects.enumerated() {
-                let icon = iconForLevel(suspect.suspicionLevel)
-                print("\(index + 1). \(icon) \(suspect.name) (PID \(suspect.pid))")
-                print("   Level:    \(suspect.suspicionLevel.rawValue)")
-                print("   Growth:   \(String(format: "%.0f", suspect.initialMemoryMB))MB → \(String(format: "%.0f", suspect.currentMemoryMB))MB (+\(String(format: "%.0f", suspect.growthMB))MB)")
-                print("   Rate:     \(String(format: "%.1f", suspect.growthRate)) MB/hour")
-                print("   Duration: \(formatDuration(suspect.lastSeen.timeIntervalSince(suspect.firstSeen)))")
-
-                if let trend = monitor.getProcessTrend(pid: suspect.pid) {
-                    print("   Trend:    \(trend)")
+            if json {
+                struct Out: Codable {
+                    struct S: Codable {
+                        let pid: Int32; let name: String
+                        let initialMemoryMB: Double; let currentMemoryMB: Double
+                        let growthMB: Double; let growthRate: Double
+                        let firstSeen: Date; let lastSeen: Date
+                        let level: String; let durationSeconds: Double
+                    }
+                    let suspects: [S]
+                    let generatedAt: Date
                 }
+                let arr = suspects.map { s in
+                    Out.S(pid: s.pid, name: s.name, initialMemoryMB: s.initialMemoryMB, currentMemoryMB: s.currentMemoryMB, growthMB: s.growthMB, growthRate: s.growthRate, firstSeen: s.firstSeen, lastSeen: s.lastSeen, level: s.suspicionLevel.rawValue, durationSeconds: s.lastSeen.timeIntervalSince(s.firstSeen))
+                }
+                let out = Out(suspects: arr, generatedAt: Date())
+                let enc = JSONEncoder(); enc.outputFormatting = [.prettyPrinted, .sortedKeys]; enc.dateEncodingStrategy = .iso8601
+                if let data = try? enc.encode(out), let s = String(data: data, encoding: .utf8) { print(s) }
+            } else {
+                if suspects.isEmpty {
+                    print("✅ No leak suspects found")
+                    return
+                }
+
+                print("Memory Leak Suspects")
+                print("═══════════════════════════════════════════════════════════")
                 print("")
+
+                for (index, suspect) in suspects.enumerated() {
+                    let icon = iconForLevel(suspect.suspicionLevel)
+                    print("\(index + 1). \(icon) \(suspect.name) (PID \(suspect.pid))")
+                    print("   Level:    \(suspect.suspicionLevel.rawValue)")
+                    print("   Growth:   \(String(format: "%.0f", suspect.initialMemoryMB))MB → \(String(format: "%.0f", suspect.currentMemoryMB))MB (+\(String(format: "%.0f", suspect.growthMB))MB)")
+                    print("   Rate:     \(String(format: "%.1f", suspect.growthRate)) MB/hour")
+                    print("   Duration: \(formatDuration(suspect.lastSeen.timeIntervalSince(suspect.firstSeen)))")
+
+                    if let trend = monitor.getProcessTrend(pid: suspect.pid) {
+                        print("   Trend:    \(trend)")
+                    }
+                    print("")
+                }
             }
         } catch {
             print("❌ No monitoring data found. Run 'memwatch --daemon' first.")
@@ -694,6 +813,8 @@ struct CLI {
         OPTIONS:
             (no args)              Show current memory snapshot
             --daemon, -d           Run continuous monitoring daemon
+            --io                   Show top disk I/O processes
+            --dangling-files       Find deleted-but-open files
             --report, -r           Display leak detection report
             --suspects, -s         List all memory leak suspects
             --ports, -p START-END  Show processes on port range
@@ -864,6 +985,4 @@ func formatDuration(_ seconds: TimeInterval) -> String {
     }
 }
 
-// MARK: - Entry Point
-
-CLI.run()
+// Entry point moved to CLIArgumentParser.swift using ArgumentParser

@@ -58,8 +58,7 @@ class ProcessMonitor {
     private let swapAlertThresholdMB: Double = 512.0
     private let minSamplesForAnalysis = 5
 
-    func recordSnapshot(processes: [(pid: Int32, name: String, memoryMB: Double, percentMemory: Double)]) {
-        let timestamp = Date()
+    func recordSnapshot(processes: [(pid: Int32, name: String, memoryMB: Double, percentMemory: Double)], timestamp: Date = Date()) {
 
         for process in processes {
             let snapshot = ProcessSnapshot(
@@ -216,6 +215,67 @@ class ProcessMonitor {
 
     func getRecentAlerts(count: Int = 20) -> [MemoryAlert] {
         return Array(alerts.suffix(count))
+    }
+
+    func getStats() -> (processesTracked: Int, totalSnapshots: Int, alertsCount: Int) {
+        let processesTracked = processHistory.count
+        let totalSnapshots = processHistory.values.reduce(0) { $0 + $1.count }
+        let alertsCount = alerts.count
+        return (processesTracked, totalSnapshots, alertsCount)
+    }
+
+    func generateJSONReport(minLevel: LeakSuspect.SuspicionLevel = .medium, recentAlertCount: Int = 10) -> String {
+        struct ReportJSON: Codable {
+            struct Suspect: Codable {
+                let pid: Int32
+                let name: String
+                let initialMemoryMB: Double
+                let currentMemoryMB: Double
+                let growthMB: Double
+                let growthRate: Double
+                let firstSeen: Date
+                let lastSeen: Date
+                let level: String
+                let durationSeconds: Double
+            }
+            struct Stats: Codable {
+                let processesTracked: Int
+                let totalSnapshots: Int
+                let alertsCount: Int
+            }
+            let suspects: [Suspect]
+            let alerts: [MemoryAlert]
+            let stats: Stats
+            let generatedAt: Date
+        }
+
+        let suspects = getLeakSuspects(minLevel: minLevel).map { s in
+            ReportJSON.Suspect(
+                pid: s.pid,
+                name: s.name,
+                initialMemoryMB: s.initialMemoryMB,
+                currentMemoryMB: s.currentMemoryMB,
+                growthMB: s.growthMB,
+                growthRate: s.growthRate,
+                firstSeen: s.firstSeen,
+                lastSeen: s.lastSeen,
+                level: s.suspicionLevel.rawValue,
+                durationSeconds: s.lastSeen.timeIntervalSince(s.firstSeen)
+            )
+        }
+        let alerts = getRecentAlerts(count: recentAlertCount)
+        let st = getStats()
+        let report = ReportJSON(
+            suspects: suspects,
+            alerts: alerts,
+            stats: .init(processesTracked: st.processesTracked, totalSnapshots: st.totalSnapshots, alertsCount: st.alertsCount),
+            generatedAt: Date()
+        )
+        let enc = JSONEncoder()
+        enc.outputFormatting = [.prettyPrinted, .sortedKeys]
+        enc.dateEncodingStrategy = .iso8601
+        let data = (try? enc.encode(report)) ?? Data("{}".utf8)
+        return String(data: data, encoding: .utf8) ?? "{}"
     }
 
     func getProcessTrend(pid: Int32) -> String? {

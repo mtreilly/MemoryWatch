@@ -132,6 +132,20 @@ struct SystemMetrics {
             return "Critical"
         }
     }
+
+    static func getVMActivity() -> (pageins: UInt64, pageouts: UInt64) {
+        var stats = vm_statistics64()
+        var count = mach_msg_type_number_t(MemoryLayout<vm_statistics64>.size / MemoryLayout<integer_t>.size)
+        let result = withUnsafeMutablePointer(to: &stats) {
+            $0.withMemoryRebound(to: integer_t.self, capacity: Int(count)) {
+                host_statistics64(mach_host_self(), HOST_VM_INFO64, $0, &count)
+            }
+        }
+        guard result == KERN_SUCCESS else {
+            return (0, 0)
+        }
+        return (UInt64(stats.pageins), UInt64(stats.pageouts))
+    }
 }
 
 struct ProcessInfo {
@@ -140,15 +154,26 @@ struct ProcessInfo {
     let memoryMB: Double
     let percentMemory: Double
     let cpuPercent: Double
+    let ioReadBps: Double
+    let ioWriteBps: Double
     let ports: [Int32]
 
     var description: String {
         let pidStr = String(format: "%5d", pid)
         let memStr = String(format: "%7.1f MB", memoryMB)
         let cpuStr = String(format: "%5.1f%%", cpuPercent)
+        var ioStr = ""
+        if ioReadBps > 0 || ioWriteBps > 0 {
+            func prettyBps(_ bps: Double) -> String {
+                if bps >= 1024 * 1024 { return String(format: "%.1fMB/s", bps / (1024*1024)) }
+                if bps >= 1024 { return String(format: "%.1fKB/s", bps / 1024) }
+                return String(format: "%.0fB/s", bps)
+            }
+            ioStr = "  IO R/W: \(prettyBps(ioReadBps))/\(prettyBps(ioWriteBps))"
+        }
         let pctStr = String(format: "%5.1f%%", percentMemory)
         let portsStr = ports.isEmpty ? "" : " [Ports: \(ports.map(String.init).joined(separator: ", "))]"
-        return "\(pidStr)  \(memStr)  \(cpuStr)  \(pctStr)  \(name)\(portsStr)"
+        return "\(pidStr)  \(memStr)  \(cpuStr)  \(pctStr)  \(name)\(portsStr)\(ioStr)"
     }
 }
 
@@ -205,6 +230,8 @@ struct PortCollector {
                     memoryMB: info.memoryMB,
                     percentMemory: info.percentMemory,
                     cpuPercent: info.cpuPercent,
+                    ioReadBps: info.ioReadBps,
+                    ioWriteBps: info.ioWriteBps,
                     ports: ports.sorted()
                 ))
             }
@@ -216,6 +243,17 @@ struct PortCollector {
 }
 
 struct ProcessCollector {
+    private struct CPUSample { let totalTimeNs: UInt64; let ts: TimeInterval }
+    private struct IOSample { let readBytes: UInt64; let writeBytes: UInt64; let ts: TimeInterval }
+    nonisolated(unsafe) private static var cpuSamples: [Int32: CPUSample] = [:]
+    nonisolated(unsafe) private static var ioSamples: [Int32: IOSample] = [:]
+    private static let ncpu: Int = {
+        var n: Int32 = 1
+        var size = MemoryLayout<Int32>.size
+        sysctlbyname("hw.ncpu", &n, &size, nil, 0)
+        return Int(n > 0 ? n : 1)
+    }()
+
     static func getAllProcesses(minMemoryMB: Double = 10) -> [(pid: Int32, name: String, memoryMB: Double, percentMemory: Double)] {
         var processes: [(Int32, String, Double, Double)] = []
         var pids = [pid_t](repeating: 0, count: 2048)
@@ -272,7 +310,7 @@ struct ProcessCollector {
         return processes
     }
 
-    static func getProcessInfo(pid: Int32) -> (pid: Int32, name: String, memoryMB: Double, percentMemory: Double, cpuPercent: Double)? {
+    static func getProcessInfo(pid: Int32) -> (pid: Int32, name: String, memoryMB: Double, percentMemory: Double, cpuPercent: Double, ioReadBps: Double, ioWriteBps: Double)? {
         // Get process name
         var pathBuf = [CChar](repeating: 0, count: 4096)
         let pathLen = proc_pidpath(pid, &pathBuf, UInt32(pathBuf.count))
@@ -305,11 +343,47 @@ struct ProcessCollector {
         let memoryMB = Double(memoryBytes) / 1_048_576
         let percentMemory = (Double(memoryBytes) / Double(Foundation.ProcessInfo.processInfo.physicalMemory)) * 100
 
-        // Calculate CPU percentage
-        let totalTime = taskInfo.pti_total_user + taskInfo.pti_total_system
-        let cpuPercent = Double(totalTime) / 10_000_000.0 // Convert to percentage
+        // Calculate CPU percentage based on delta over time
+        let totalTimeNs: UInt64 = taskInfo.pti_total_user + taskInfo.pti_total_system
+        let now = Date().timeIntervalSince1970
+        var cpuPercent: Double = 0
+        if let last = cpuSamples[pid] {
+            let dt = now - last.ts
+            if dt > 0 {
+                let dNs = Double(totalTimeNs &- last.totalTimeNs)
+                // percent over all cores
+                cpuPercent = min(100.0, max(0.0, (dNs / 1_000_000_000.0) / dt / Double(ncpu) * 100.0))
+            }
+        }
+        cpuSamples[pid] = CPUSample(totalTimeNs: totalTimeNs, ts: now)
 
-        return (pid, name, memoryMB, percentMemory, cpuPercent)
+        // Per-process disk IO via proc_pid_rusage
+        var ri = rusage_info_current()
+        var ioReadBps: Double = 0
+        var ioWriteBps: Double = 0
+        let r = withUnsafeMutablePointer(to: &ri) { ptr -> Int32 in
+            return ptr.withMemoryRebound(to: rusage_info_t?.self, capacity: 1) { rptr in
+                return proc_pid_rusage(pid, RUSAGE_INFO_CURRENT, rptr)
+            }
+        }
+        if r == 0 {
+            // Not permitted or failed; leave IO as 0
+        } else {
+            let readBytes = ri.ri_diskio_bytesread
+            let writeBytes = ri.ri_diskio_byteswritten
+            if let last = ioSamples[pid] {
+                let dt = now - last.ts
+                if dt > 0 {
+                    let dR = Double(readBytes &- last.readBytes)
+                    let dW = Double(writeBytes &- last.writeBytes)
+                    ioReadBps = max(0, dR / dt)
+                    ioWriteBps = max(0, dW / dt)
+                }
+            }
+            ioSamples[pid] = IOSample(readBytes: readBytes, writeBytes: writeBytes, ts: now)
+        }
+
+        return (pid, name, memoryMB, percentMemory, cpuPercent, ioReadBps, ioWriteBps)
     }
 
     static func getAllProcessesWithCPU(minMemoryMB: Double = 10) -> [ProcessInfo] {
@@ -332,6 +406,8 @@ struct ProcessCollector {
                     memoryMB: info.memoryMB,
                     percentMemory: info.percentMemory,
                     cpuPercent: info.cpuPercent,
+                    ioReadBps: info.ioReadBps,
+                    ioWriteBps: info.ioWriteBps,
                     ports: []
                 ))
             }

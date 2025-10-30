@@ -62,7 +62,7 @@ nohup ./memory_watcher.sh > /dev/null 2>&1 &
 
 ### 2. Analysis Tool (`analyze.py`)
 
-Generate comprehensive reports from collected data.
+Generate comprehensive reports from collected data (also available via the Swift CLI).
 
 **Usage:**
 ```bash
@@ -143,8 +143,9 @@ All data is stored in `~/MemoryWatch/`:
 3. **Build CLI tool:**
    ```bash
    ./build_app.sh
-   # Then run
-   ./MemoryWatchApp/.build/release/MemoryWatch
+   # Then run (from repo root)
+   ./MemoryWatchApp/.build/release/MemoryWatch snapshot
+   ./MemoryWatchApp/.build/release/MemoryWatch daemon
    ```
 
 4. **Generate reports:**
@@ -185,6 +186,26 @@ launchctl load ~/Library/LaunchAgents/com.memorywatch.daemon.plist
 ```
 
 ## Understanding the Output
+
+### CLI Quick Reference
+
+Use `memwatch --help` to list subcommands.
+
+- Snapshot:
+  - `memwatch snapshot` (human)
+  - `memwatch snapshot --json --min-mem-mb 30 --top 20`
+- Daemon:
+  - `memwatch daemon --interval 30 --min-mem-mb 50 --swap-warn-mb 1024 --pageouts-warn-rate 100`
+- Suspects:
+  - `memwatch suspects` (human)
+  - `memwatch suspects --json --min-level medium --max 10`
+- Report:
+  - `memwatch report` (human)
+  - `memwatch report --json --min-level medium --recent-alerts 20`
+- Disk I/O:
+  - `memwatch io --sample-ms 1000 --top 20`
+- Deleted-but-open files:
+  - `memwatch dangling-files`
 
 ### Memory Leak Detection
 A process is flagged as a potential leak when:

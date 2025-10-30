@@ -7,16 +7,16 @@
 sudo cp MemoryWatchApp/.build/release/MemoryWatch /usr/local/bin/memwatch
 
 # Quick snapshot of current memory
-memwatch
+memwatch snapshot
 
 # Start continuous monitoring daemon
-memwatch --daemon
+memwatch daemon
 
 # Check for memory leaks
-memwatch --suspects
+memwatch suspects
 
 # View full report
-memwatch --report
+memwatch report
 ```
 
 ## Command Reference
@@ -26,7 +26,7 @@ memwatch --report
 Shows instant system overview:
 
 ```bash
-memwatch
+memwatch snapshot
 ```
 
 **Output:**
@@ -41,12 +41,40 @@ memwatch
 
 ---
 
-###Daemon Mode
+### Disk I/O Activity
+
+Identify top disk writers/readers and potential heavy I/O processes:
+
+```bash
+memwatch io
+```
+
+Shows per-process write/read rates (B/s, KB/s, MB/s) sampled over ~0.6s.
+
+Use when:
+- Investigating SSD churn or slowdowns
+- Detecting processes persistently writing logs or caches
+
+---
+
+### Find Deleted-But-Open Files
+
+Detect files that were deleted but are still held open by a process (space won’t free until closed):
+
+```bash
+memwatch dangling-files
+```
+
+Note: Uses `lsof`; may require admin permissions depending on your system.
+
+---
+
+### Daemon Mode
 
 Continuous monitoring with leak detection:
 
 ```bash
-memwatch --daemon
+memwatch daemon
 ```
 
 **Features:**
@@ -78,7 +106,9 @@ memwatch --daemon
 Display leak detection analysis:
 
 ```bash
-memwatch --report
+memwatch report
+memwatch report --json                # JSON output
+memwatch report --json --min-level high --recent-alerts 20
 ```
 
 **Shows:**
@@ -96,7 +126,9 @@ memwatch --report
 List all potential memory leaks:
 
 ```bash
-memwatch --suspects
+memwatch suspects
+memwatch suspects --json              # JSON output
+memwatch suspects --min-level medium --max 5
 ```
 
 **Output Example:**
@@ -123,29 +155,29 @@ memwatch --suspects
 
 ```bash
 # 1. Check current state
-memwatch
+memwatch snapshot
 
 # 2. If swap is high, start monitoring
-memwatch --daemon
+memwatch daemon
 
 # 3. Let run for 1+ hours, then check
-memwatch --suspects
+memwatch suspects
 
 # 4. View full analysis
-memwatch --report
+memwatch report
 ```
 
 ### Scenario 2: Debugging Application Memory Leak
 
 ```bash
 # 1. Start daemon before running your app
-memwatch --daemon &
+memwatch daemon &
 
 # 2. Run your application
 ./my_app
 
 # 3. After some time, check for leaks
-memwatch --suspects
+memwatch suspects
 
 # 4. Stop daemon when done
 fg  # Bring daemon to foreground
@@ -159,10 +191,10 @@ Add to crontab or launchd:
 **crontab:**
 ```bash
 # Start on reboot
-@reboot /usr/local/bin/memwatch --daemon >> ~/MemoryWatch/daemon.log 2>&1
+@reboot /usr/local/bin/memwatch daemon >> ~/MemoryWatch/daemon.log 2>&1
 
 # Daily report
-0 9 * * * /usr/local/bin/memwatch --report | mail -s "Memory Report" user@example.com
+0 9 * * * /usr/local/bin/memwatch report | mail -s "Memory Report" user@example.com
 ```
 
 **LaunchAgent** (`~/Library/LaunchAgents/com.memorywatch.plist`):
@@ -176,7 +208,7 @@ Add to crontab or launchd:
     <key>ProgramArguments</key>
     <array>
         <string>/usr/local/bin/memwatch</string>
-        <string>--daemon</string>
+        <string>daemon</string>
     </array>
     <key>RunAtLoad</key>
     <true/>
@@ -291,12 +323,12 @@ ls -lh ~/MemoryWatch/memwatch_state.json
 
 ### "No monitoring data found"
 
-**Problem:** Running --report or --suspects without daemon data
+**Problem:** Running report or suspects without daemon data
 
 **Solution:**
 ```bash
 # Start daemon first
-memwatch --daemon
+memwatch daemon
 # Let run for at least 5 minutes (10 scans)
 # Then check reports
 ```
@@ -336,16 +368,17 @@ mv ~/MemoryWatch/memwatch_state.json ~/MemoryWatch/memwatch_state_$(date +%Y%m%d
 
 ### Custom Monitoring Intervals
 
-Edit `main.swift` line 78:
-```swift
-let interval: TimeInterval = 60 // Change from 30 to 60 seconds
+Use CLI option:
+```bash
+memwatch daemon --interval 60
 ```
 
 ### Lower Memory Threshold
 
-Edit `main.swift` line 96:
-```swift
-let processes = ProcessCollector.getAllProcesses(minMemoryMB: 20) // Was 50
+Use CLI options:
+```bash
+memwatch snapshot --min-mem-mb 20
+memwatch daemon --min-mem-mb 20
 ```
 
 ### Integration with Prometheus
@@ -353,7 +386,7 @@ let processes = ProcessCollector.getAllProcesses(minMemoryMB: 20) // Was 50
 Export metrics:
 ```bash
 # Add to crontab
-*/5 * * * * /usr/local/bin/memwatch --report | /usr/local/bin/parse_to_prometheus.sh
+*/5 * * * * /usr/local/bin/memwatch report | /usr/local/bin/parse_to_prometheus.sh
 ```
 
 ---
@@ -384,12 +417,12 @@ Export metrics:
 
 2. **Start monitoring:**
    ```bash
-   nohup memwatch --daemon > ~/MemoryWatch/daemon.log 2>&1 &
+  nohup memwatch daemon > ~/MemoryWatch/daemon.log 2>&1 &
    ```
 
 3. **Check daily:**
    ```bash
-   memwatch --suspects
+  memwatch suspects
    ```
 
 4. **Set up auto-start:** Use LaunchAgent (see above)
@@ -403,6 +436,7 @@ Export metrics:
 - **Customization:** Edit Swift files and rebuild
 
 **Key Files:**
-- `main.swift` - CLI interface and daemon loop
+- `CLIArgumentParser.swift` - Subcommands and entry point
+- `Handlers.swift` - CLI implementations (snapshot, daemon, io, etc.)
 - `ProcessMonitor.swift` - Leak detection logic
 - `SystemMetrics.swift` - Memory/process collection
