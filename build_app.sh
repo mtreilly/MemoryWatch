@@ -1,27 +1,25 @@
 #!/usr/bin/env bash
-# Build script for MemoryWatch SwiftUI app
+# Build script for MemoryWatch CLI tool
 
 set -euo pipefail
 
+# Get the directory where this script is located
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 APP_NAME="MemoryWatch"
-APP_DIR="MemoryWatchApp"
-BUILD_DIR="build"
+APP_DIR="${SCRIPT_DIR}/MemoryWatchApp"
 
-echo "Building $APP_NAME..."
+echo "Building $APP_NAME CLI tool..."
 
 cd "$APP_DIR"
 
-# Build using xcodebuild
-xcodebuild -scheme MemoryWatchApp \
-    -configuration Release \
-    -derivedDataPath "$BUILD_DIR" \
-    build
+# Build using Swift Package Manager
+swift build -c release
 
 echo "Build complete!"
-echo "App location: $APP_DIR/$BUILD_DIR/Build/Products/Release/$APP_NAME.app"
+echo "Binary location: $APP_DIR/.build/release/$APP_NAME"
 echo ""
-echo "To run the app:"
-echo "  open $APP_DIR/$BUILD_DIR/Build/Products/Release/$APP_NAME.app"
+echo "To run:"
+echo "  $APP_DIR/.build/release/$APP_NAME"
 echo ""
-echo "To install:"
-echo "  cp -r $APP_DIR/$BUILD_DIR/Build/Products/Release/$APP_NAME.app /Applications/"
+echo "To install to /usr/local/bin:"
+echo "  sudo cp $APP_DIR/.build/release/$APP_NAME /usr/local/bin/memwatch"

@@ -30,13 +30,21 @@ timestamp() { date +"%Y-%m-%d %H:%M:%S"; }
 
 # Convert a string like "2048.00M" or "2.00G" to MB (integer).
 to_mb() {
-  local val unit
-  val="$(printf "%s" "$1" | sed -E 's/([0-9]+(\.[0-9]+)?)\s*([KMG])/ \1 \3 /;t; s/$/ 0 X /' | awk '{print $1}')" || val=0
-  unit="$(printf "%s" "$1" | sed -E 's/([0-9]+(\.[0-9]+)?)\s*([KMG])/ \1 \3 /;t; s/$/ 0 X /' | awk '{print $2}')" || unit="X"
+  local input="$1"
+  # Extract number and unit separately
+  local num=$(echo "$input" | grep -oE '[0-9.]+' | head -1)
+  local unit=$(echo "$input" | grep -oE '[KMG]' | head -1)
+
+  # Default to 0 if empty
+  if [ -z "$num" ]; then
+    echo 0
+    return
+  fi
+
   case "$unit" in
-    K) awk -v v="$val" 'BEGIN{printf "%d", v/1024}' ;;
-    M) awk -v v="$val" 'BEGIN{printf "%d", v}' ;;
-    G) awk -v v="$val" 'BEGIN{printf "%d", v*1024}' ;;
+    K) awk -v v="$num" 'BEGIN{printf "%d", v/1024}' ;;
+    M) awk -v v="$num" 'BEGIN{printf "%d", v}' ;;
+    G) awk -v v="$num" 'BEGIN{printf "%d", v*1024}' ;;
     *) echo 0 ;;
   esac
 }
@@ -123,11 +131,17 @@ log_swap_history() {
   press="$(mem_pressure_summary)"
 
   # Extract swap total and calculate free percentage
-  local swap_info
+  local swap_info total_str
   swap_info="$(/usr/sbin/sysctl -n vm.swapusage 2>/dev/null)"
-  total="$(echo "$swap_info" | sed -E 's/.*total = ([0-9.]+[KMG]).*/\1/' | xargs -I {} bash -c "$(declare -f to_mb); to_mb {}")"
+  total_str="$(echo "$swap_info" | grep -oE 'total = [0-9.]+[KMG]' | grep -oE '[0-9.]+[KMG]')"
 
-  if [ "$total" -gt 0 ]; then
+  if [ -n "$total_str" ]; then
+    total="$(to_mb "$total_str")"
+  else
+    total=0
+  fi
+
+  if [ "$total" -gt 0 ] 2>/dev/null; then
     free_pct="$(awk -v s="$swap" -v t="$total" 'BEGIN{printf "%d", 100-((s/t)*100)}')"
   else
     free_pct="100"
@@ -141,14 +155,17 @@ check_memory_leaks() {
   local ts
   ts="$(timestamp)"
 
-  # Get all processes with RSS > 100MB
-  ps -axo pid,comm,rss | awk 'NR>1 && $3>102400 {printf "%s:%s:%d\n",$1,$2,$3/1024}' | while IFS=: read -r pid comm rss_mb; do
+  # Get all processes with RSS > 100MB and store in temp file
+  local tmpfile="/tmp/memwatch_$$"
+  ps -axo pid,comm,rss | awk 'NR>1 && $3>102400 {printf "%s:%s:%d\n",$1,$2,int($3/1024)}' > "$tmpfile"
+
+  while IFS=: read -r pid comm rss_mb; do
     local key="${pid}_${comm}"
     local prev_rss="${PROCESS_MEMORY[$key]:-0}"
 
-    if [ "$prev_rss" -gt 0 ]; then
+    if [ "$prev_rss" -gt 0 ] 2>/dev/null; then
       local growth=$((rss_mb - prev_rss))
-      if [ "$growth" -ge "$LEAK_GROWTH_MB" ]; then
+      if [ "$growth" -ge "$LEAK_GROWTH_MB" ] 2>/dev/null; then
         echo "[$ts] POTENTIAL LEAK: $comm (PID $pid) grew ${growth}MB: ${prev_rss}MB -> ${rss_mb}MB" >> "$LEAKS_LOG"
         echo "[$ts] POTENTIAL LEAK detected: $comm (PID $pid) grew ${growth}MB" >> "$EVENTS"
 
@@ -159,7 +176,9 @@ check_memory_leaks() {
 
     # Update tracking
     PROCESS_MEMORY[$key]=$rss_mb
-  done
+  done < "$tmpfile"
+
+  rm -f "$tmpfile"
 }
 
 maybe_sample() {
