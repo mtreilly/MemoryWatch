@@ -1,2 +1,35 @@
+# Generated logs and data
 events.log
 memory_log.csv
+memory_leaks.log
+swap_history.csv
+process_history.txt
+report_*.txt
+
+# Sample files
+samples/
+*.txt
+
+# Xcode
+MemoryWatchApp/build/
+MemoryWatchApp/DerivedData/
+*.xcuserstate
+*.xcuserdatad
+*.xcworkspace
+xcuserdata/
+
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+.Python
+*.so
+
+# Build artifacts
+*.app
+*.dSYM

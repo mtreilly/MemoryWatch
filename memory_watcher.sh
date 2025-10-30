@@ -1,20 +1,30 @@
 #!/usr/bin/env bash
 # macOS Memory Watcher — logs top memory hogs, swap usage, and captures samples on spikes.
+# Detects memory leaks, tracks swap usage, and monitors SSD wear from swap.
 # Ready to run: save as memory_watcher.sh, then: chmod +x memory_watcher.sh && ./memory_watcher.sh
 # Stop with Ctrl+C.
 
 set -u
 INTERVAL_SEC="${INTERVAL_SEC:-30}"     # seconds between snapshots
-TOP_N="${TOP_N:-5}"                    # how many top processes to log
+TOP_N="${TOP_N:-10}"                   # how many top processes to log
 RSS_ALERT_MB="${RSS_ALERT_MB:-1024}"   # sample a process if its RSS >= this (in MB)
 SWAP_ALERT_MB="${SWAP_ALERT_MB:-512}"  # sample top proc if swap used >= this (in MB)
+LEAK_GROWTH_MB="${LEAK_GROWTH_MB:-100}" # flag potential leak if process grows by this much
+LEAK_CHECK_INTERVALS="${LEAK_CHECK_INTERVALS:-10}" # check for leaks every N intervals
 
 LOG_DIR="${HOME}/MemoryWatch"
 SAMPLES_DIR="${LOG_DIR}/samples"
 CSV="${LOG_DIR}/memory_log.csv"
 EVENTS="${LOG_DIR}/events.log"
+LEAKS_LOG="${LOG_DIR}/memory_leaks.log"
+SWAP_HISTORY="${LOG_DIR}/swap_history.csv"
+PROCESS_HISTORY="${LOG_DIR}/process_history.txt"
 
 mkdir -p "$LOG_DIR" "$SAMPLES_DIR"
+
+# Track process memory over time for leak detection
+declare -A PROCESS_MEMORY
+ITERATION_COUNT=0
 
 timestamp() { date +"%Y-%m-%d %H:%M:%S"; }
 
@@ -51,6 +61,9 @@ init_csv() {
   if [ ! -s "$CSV" ]; then
     echo "timestamp,swap_used_mb,pressure,rank,pid,ppid,user,rss_mb,vsz_mb,mem_pct,command" > "$CSV"
   fi
+  if [ ! -s "$SWAP_HISTORY" ]; then
+    echo "timestamp,swap_used_mb,swap_total_mb,pressure,free_pct" > "$SWAP_HISTORY"
+  fi
 }
 init_csv
 
@@ -80,13 +93,73 @@ log_top() {
 sample_process() {
   local pid="$1" why="$2"
   local out="${SAMPLES_DIR}/sample_${pid}_$(date +%Y%m%d_%H%M%S)_${why}.txt"
+
+  # Check if process exists first
+  if ! kill -0 "$pid" 2>/dev/null; then
+    echo "[$(timestamp)] process $pid no longer exists, skipping sample" >> "$EVENTS"
+    return 1
+  fi
+
   if command -v sample >/dev/null 2>&1; then
     echo "[$(timestamp)] sampling pid=$pid reason=$why -> $out" >> "$EVENTS"
     # 5 seconds of sampling, minimal overhead
-    /usr/bin/sample "$pid" 5 -file "$out" >/dev/null 2>&1 || echo "[$(timestamp)] sample failed for pid=$pid" >> "$EVENTS"
+    if ! /usr/bin/sample "$pid" 5 -file "$out" 2>&1 | tee -a "$EVENTS" | grep -q "error"; then
+      # Also capture heap info if leaks tool is available
+      if command -v leaks >/dev/null 2>&1; then
+        /usr/bin/leaks "$pid" >> "${out%.txt}_leaks.txt" 2>&1 &
+      fi
+    else
+      echo "[$(timestamp)] sample failed for pid=$pid (process may have terminated)" >> "$EVENTS"
+    fi
   else
     echo "[$(timestamp)] 'sample' tool not found; skipping sample for pid=$pid" >> "$EVENTS"
   fi
+}
+
+log_swap_history() {
+  local ts swap total free_pct press
+  ts="$(timestamp)"
+  swap="$(swap_used_mb)"
+  press="$(mem_pressure_summary)"
+
+  # Extract swap total and calculate free percentage
+  local swap_info
+  swap_info="$(/usr/sbin/sysctl -n vm.swapusage 2>/dev/null)"
+  total="$(echo "$swap_info" | sed -E 's/.*total = ([0-9.]+[KMG]).*/\1/' | xargs -I {} bash -c "$(declare -f to_mb); to_mb {}")"
+
+  if [ "$total" -gt 0 ]; then
+    free_pct="$(awk -v s="$swap" -v t="$total" 'BEGIN{printf "%d", 100-((s/t)*100)}')"
+  else
+    free_pct="100"
+  fi
+
+  echo "$ts,$swap,$total,$press,$free_pct" >> "$SWAP_HISTORY"
+}
+
+check_memory_leaks() {
+  # Check for potential memory leaks by tracking process growth
+  local ts
+  ts="$(timestamp)"
+
+  # Get all processes with RSS > 100MB
+  ps -axo pid,comm,rss | awk 'NR>1 && $3>102400 {printf "%s:%s:%d\n",$1,$2,$3/1024}' | while IFS=: read -r pid comm rss_mb; do
+    local key="${pid}_${comm}"
+    local prev_rss="${PROCESS_MEMORY[$key]:-0}"
+
+    if [ "$prev_rss" -gt 0 ]; then
+      local growth=$((rss_mb - prev_rss))
+      if [ "$growth" -ge "$LEAK_GROWTH_MB" ]; then
+        echo "[$ts] POTENTIAL LEAK: $comm (PID $pid) grew ${growth}MB: ${prev_rss}MB -> ${rss_mb}MB" >> "$LEAKS_LOG"
+        echo "[$ts] POTENTIAL LEAK detected: $comm (PID $pid) grew ${growth}MB" >> "$EVENTS"
+
+        # Trigger detailed sampling for leak suspects
+        sample_process "$pid" "leak_suspect_growth_${growth}MB"
+      fi
+    fi
+
+    # Update tracking
+    PROCESS_MEMORY[$key]=$rss_mb
+  done
 }
 
 maybe_sample() {
@@ -107,6 +180,15 @@ maybe_sample() {
     elif [ "$swap" -ge "$SWAP_ALERT_MB" ]; then
       sample_process "$pid" "swap_${swap}MB_ge_${SWAP_ALERT_MB}MB"
     fi
+  fi
+
+  # Log swap history every interval
+  log_swap_history
+
+  # Check for memory leaks periodically
+  ITERATION_COUNT=$((ITERATION_COUNT + 1))
+  if [ $((ITERATION_COUNT % LEAK_CHECK_INTERVALS)) -eq 0 ]; then
+    check_memory_leaks
   fi
 }
 
