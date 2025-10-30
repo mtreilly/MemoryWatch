@@ -1,5 +1,59 @@
 import Foundation
 
+// MARK: - Directory Configuration
+
+struct MemoryWatchPaths {
+    static let baseDir = FileManager.default.homeDirectoryForCurrentUser
+        .appendingPathComponent("MemoryWatch")
+
+    // Data directories
+    static let dataDir = baseDir.appendingPathComponent("data")
+    static let snapshotsDir = dataDir.appendingPathComponent("snapshots")
+    static let stateDir = dataDir.appendingPathComponent("state")
+    static let samplesDir = dataDir.appendingPathComponent("samples")
+
+    // Log directories
+    static let logsDir = baseDir.appendingPathComponent("logs")
+    static let eventsLogsDir = logsDir.appendingPathComponent("events")
+    static let leaksLogsDir = logsDir.appendingPathComponent("leaks")
+    static let daemonLogsDir = logsDir.appendingPathComponent("daemon")
+
+    // Report directories
+    static let reportsDir = baseDir.appendingPathComponent("reports")
+    static let dailyReportsDir = reportsDir.appendingPathComponent("daily")
+    static let weeklyReportsDir = reportsDir.appendingPathComponent("weekly")
+    static let onDemandReportsDir = reportsDir.appendingPathComponent("on-demand")
+
+    // Legacy paths (for migration)
+    static let legacyStateFile = baseDir.appendingPathComponent("memwatch_state.json")
+
+    // Current file paths
+    static let stateFile = stateDir.appendingPathComponent("memwatch_state.json")
+    static let memoryLogFile = snapshotsDir.appendingPathComponent("memory_log.csv")
+    static let swapHistoryFile = snapshotsDir.appendingPathComponent("swap_history.csv")
+    static let eventsLogFile = eventsLogsDir.appendingPathComponent("events.log")
+    static let leaksLogFile = leaksLogsDir.appendingPathComponent("memory_leaks.log")
+
+    static func ensureDirectoriesExist() throws {
+        let dirs = [
+            dataDir, snapshotsDir, stateDir, samplesDir,
+            logsDir, eventsLogsDir, leaksLogsDir, daemonLogsDir,
+            reportsDir, dailyReportsDir, weeklyReportsDir, onDemandReportsDir
+        ]
+
+        for dir in dirs {
+            try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        }
+    }
+
+    static func migrateLegacyFiles() {
+        // Migrate old state file if it exists
+        if FileManager.default.fileExists(atPath: legacyStateFile.path) {
+            try? FileManager.default.moveItem(at: legacyStateFile, to: stateFile)
+        }
+    }
+}
+
 struct SystemMetrics {
     let totalMemoryGB: Double
     let usedMemoryGB: Double
@@ -294,6 +348,45 @@ struct ProcessManager {
         case force      // SIGKILL
     }
 
+    enum ProcessCriticality {
+        case critical           // OS-critical (kernel, launchd, system daemons)
+        case systemImportant    // Important system services
+        case normal             // Regular user processes
+    }
+
+    // OS-critical process names (should NEVER be killed)
+    private static let criticalProcessNames: Set<String> = [
+        "kernel_task", "launchd", "init", "systemd",
+        "WindowServer", "loginwindow", "SystemUIServer",
+        "Dock", "Finder", "NotificationCenter"
+    ]
+
+    // Important system processes (warn before killing)
+    private static let importantProcessNames: Set<String> = [
+        "cfprefsd", "distnoted", "UserEventAgent",
+        "bluetoothd", "coreaudiod", "CoreServicesUIAgent",
+        "sharingd", "cloudd", "nsurlsessiond"
+    ]
+
+    static func assessCriticality(processName: String, pid: Int32) -> ProcessCriticality {
+        // PID 0 and 1 are always critical
+        if pid <= 1 {
+            return .critical
+        }
+
+        // Check against known critical processes
+        if criticalProcessNames.contains(processName) {
+            return .critical
+        }
+
+        // Check against important system processes
+        if importantProcessNames.contains(processName) {
+            return .systemImportant
+        }
+
+        return .normal
+    }
+
     static func killProcess(pid: Int32, mode: KillMode = .safe) -> (success: Bool, message: String) {
         let signal: Int32 = mode == .safe ? SIGTERM : SIGKILL
         let result = kill(pid, signal)
@@ -307,7 +400,105 @@ struct ProcessManager {
         }
     }
 
+    static func killProcessGroup(pattern: String, mode: KillMode = .safe) -> [(pid: Int32, name: String, success: Bool, message: String)] {
+        let allProcesses = ProcessCollector.getAllProcessesWithCPU(minMemoryMB: 0)
+        let matchingProcesses = allProcesses.filter { process in
+            process.name.range(of: pattern, options: .regularExpression) != nil
+        }
+
+        var results: [(Int32, String, Bool, String)] = []
+
+        for process in matchingProcesses {
+            let criticality = assessCriticality(processName: process.name, pid: process.pid)
+
+            // Skip critical processes
+            if criticality == .critical {
+                results.append((process.pid, process.name, false, "❌ SKIPPED: Critical system process"))
+                continue
+            }
+
+            let result = killProcess(pid: process.pid, mode: mode)
+            results.append((process.pid, process.name, result.success, result.message))
+        }
+
+        return results
+    }
+
     static func isProcessRunning(pid: Int32) -> Bool {
         return kill(pid, 0) == 0
+    }
+}
+
+struct PortManager {
+    struct PortInfo {
+        let port: Int32
+        let pid: Int32
+        let processName: String
+        let isAvailable: Bool
+        let criticality: ProcessManager.ProcessCriticality
+    }
+
+    static func checkPort(_ port: Int32) -> PortInfo? {
+        let processes = PortCollector.getProcessesOnPorts(portRange: port...port)
+
+        if processes.isEmpty {
+            return PortInfo(port: port, pid: 0, processName: "", isAvailable: true, criticality: .normal)
+        }
+
+        let process = processes[0]
+        let criticality = ProcessManager.assessCriticality(processName: process.name, pid: process.pid)
+
+        return PortInfo(
+            port: port,
+            pid: process.pid,
+            processName: process.name,
+            isAvailable: false,
+            criticality: criticality
+        )
+    }
+
+    static func checkPortRange(_ portRange: ClosedRange<Int32>) -> [PortInfo] {
+        var results: [PortInfo] = []
+        let processes = PortCollector.getProcessesOnPorts(portRange: portRange)
+
+        // Create a map of port -> process
+        var portMap: [Int32: ProcessInfo] = [:]
+        for process in processes {
+            for port in process.ports {
+                portMap[port] = process
+            }
+        }
+
+        // Check each port in range
+        for port in portRange {
+            if let process = portMap[port] {
+                let criticality = ProcessManager.assessCriticality(processName: process.name, pid: process.pid)
+                results.append(PortInfo(
+                    port: port,
+                    pid: process.pid,
+                    processName: process.name,
+                    isAvailable: false,
+                    criticality: criticality
+                ))
+            } else {
+                results.append(PortInfo(
+                    port: port,
+                    pid: 0,
+                    processName: "",
+                    isAvailable: true,
+                    criticality: .normal
+                ))
+            }
+        }
+
+        return results
+    }
+
+    static func findFreePorts(in portRange: ClosedRange<Int32>, count: Int = 1) -> [Int32] {
+        let portInfos = checkPortRange(portRange)
+        return portInfos
+            .filter { $0.isAvailable }
+            .prefix(count)
+            .map { $0.port }
     }
 }
