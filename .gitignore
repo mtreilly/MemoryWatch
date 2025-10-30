@@ -5,6 +5,9 @@ memory_leaks.log
 swap_history.csv
 process_history.txt
 report_*.txt
+memwatch_state.json
+daemon.log
+daemon.err
 
 # Sample files
 samples/
