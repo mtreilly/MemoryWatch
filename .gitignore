@@ -9,6 +9,11 @@ memwatch_state.json
 daemon.log
 daemon.err
 
+# SQLite database files
+data/memorywatch.sqlite
+data/memorywatch.sqlite-shm
+data/memorywatch.sqlite-wal
+
 # Sample files
 samples/
 *.txt
