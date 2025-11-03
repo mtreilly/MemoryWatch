@@ -97,7 +97,7 @@ public struct LeakSuspect {
     }
 }
 
-public struct MemoryAlert: Codable {
+public struct MemoryAlert: Codable, Sendable {
     public let timestamp: Date
     public let type: AlertType
     public let message: String
@@ -105,7 +105,7 @@ public struct MemoryAlert: Codable {
     public let processName: String?
     public let metadata: [String: String]?
 
-    public enum AlertType: String, Codable {
+    public enum AlertType: String, Codable, Sendable {
         case memoryLeak = "MEMORY_LEAK"
         case highSwap = "HIGH_SWAP"
         case rapidGrowth = "RAPID_GROWTH"

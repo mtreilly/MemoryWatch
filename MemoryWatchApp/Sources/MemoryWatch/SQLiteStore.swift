@@ -447,6 +447,30 @@ public final class SQLiteStore {
         return (attributes[.size] as? NSNumber)?.uint64Value ?? 0
     }
 
+    /// Perform database maintenance (cleanup, optimization, WAL checkpoint)
+    public func performMaintenance() {
+        lock.lock()
+        defer { lock.unlock() }
+
+        performMaintenanceIfNeededLocked(now: Date())
+    }
+
+    /// Delete snapshots older than the specified timestamp
+    public func deleteSnapshotsOlderThan(_ timestamp: Double) {
+        lock.lock()
+        defer { lock.unlock() }
+
+        executeDelete(sql: "DELETE FROM snapshots WHERE timestamp < ?", cutoff: timestamp)
+    }
+
+    /// Delete alerts older than the specified timestamp
+    public func deleteAlertsOlderThan(_ timestamp: Double) {
+        lock.lock()
+        defer { lock.unlock() }
+
+        executeDelete(sql: "DELETE FROM alerts WHERE timestamp < ?", cutoff: timestamp)
+    }
+
     private static func configurePragmas(db: OpaquePointer) {
         sqlite3_exec(db, "PRAGMA journal_mode=WAL", nil, nil, nil)
         sqlite3_exec(db, "PRAGMA synchronous=NORMAL", nil, nil, nil)
