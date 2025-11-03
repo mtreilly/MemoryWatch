@@ -28,10 +28,17 @@
 - ✅ **Artifact Metadata**: Stores paths, analysis results, and suspected leak info in alert metadata.
 - ✅ **Comprehensive Testing**: 21 new unit tests for adapters, analysis, registry, and integration (45 total tests passing).
 
+## Phase 4: Orphan/Residue Detection (COMPLETE) ✅
+- ✅ **Deleted-but-Open Files**: Uses lsof to find deleted files still held open by processes.
+- ✅ **Stale Swapfile Detection**: Scans /var/vm for unused swap files with configurable age threshold.
+- ✅ **Orphaned Process Detection**: Identifies zombies (Z state) and suspended processes (T state) with interval-based checking.
+- ✅ **Bundle Path Resolution**: Maps process IDs to application bundles for app-specific remediation.
+- ✅ **Unified Report Types**: OrphanReport enum with severity levels and automated remediation suggestions.
+- ✅ **Comprehensive Testing**: 28 new unit tests for all detection methods, report types, and properties.
+
 ## Next Milestones
-1. **Orphan/Residue Detection (Phase 4)** – extend filesystem sweeps for deleted-but-open files, stale swapfiles, and orphaned processes; map offenders back to bundles for remediation workflows.
-2. **Documentation & Developer Experience (Phase 5)** – expand CLI docs, add API references for the datastore, and publish guidance on enabling required system entitlements.
-3. **Production Deployment (Phase 6)** – code signing, app notarization, distribution via App Store or website.
+1. **Documentation & Developer Experience (Phase 5)** – expand CLI docs, add API references for the datastore, and publish guidance on enabling required system entitlements.
+2. **Production Deployment (Phase 6)** – code signing, app notarization, distribution via App Store or website.
 
 ### Menu Bar Implementation Plan
 - **Phase 0 – Data plumbing** ✅: a `MenuBarState` observable now aggregates system metrics, suspects, and diagnostic hints for the UI.
