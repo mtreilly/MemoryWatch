@@ -10,12 +10,19 @@
 - Persisted runtime diagnostic hints with JSON metadata (artifact paths, commands) inside SQLite alerts for traceability and tooling.
 - Added `memwatch diagnostics <PID>` to automatically capture artifacts for the mapped runtimes and store metadata alongside alerts.
 
+## Phase 2: Hardening & Telemetry (COMPLETE) ✅
+- ✅ **MaintenanceScheduler**: Periodic database maintenance with configurable 30-minute intervals, WAL checkpoint optimization, and PRAGMA optimize.
+- ✅ **WAL Size Monitoring**: Automated alerts when WAL exceeds warning (100MB) or critical (500MB) thresholds with debounced notifications.
+- ✅ **RetentionManager**: Configurable data retention policies respecting user preferences (1-720 hours), with automatic cleanup of old snapshots and alerts.
+- ✅ **Database Health**: Enhanced `StoreHealth` metrics including WAL size, free pages, and quick integrity checks.
+- ✅ **Type Safety**: Made MemoryAlert and AlertType Sendable for safe concurrent access.
+- ✅ **Comprehensive Testing**: 10 new unit tests covering maintenance, retention, and health monitoring (24 total tests passing).
+
 ## Next Milestones
-1. **Hardening & Telemetry (Phase 2)** – automated vacuum scheduling, retention-trim alerts, WAL size budgeting + alerting when WAL exceeds thresholds.
-2. **Toolchain Integrations** – expand runtime diagnostic adapters (Chromium heap dumps, Xcode malloc stack logging, Node heap snapshots) and capture their artefacts alongside alerts.
-3. **Orphan/Residue Detection** – extend filesystem sweeps for deleted-but-open files, stale swapfiles, and orphaned processes; map offenders back to bundles for remediation workflows.
-4. **Documentation & Developer Experience** – expand CLI docs, add API references for the datastore, and publish guidance on enabling required system entitlements.
-5. **Production Deployment** – code signing, app notarization, distribution via App Store or website.
+1. **Toolchain Integrations (Phase 3)** – expand runtime diagnostic adapters (Chromium heap dumps, Xcode malloc stack logging, Node heap snapshots) and capture their artefacts alongside alerts.
+2. **Orphan/Residue Detection (Phase 4)** – extend filesystem sweeps for deleted-but-open files, stale swapfiles, and orphaned processes; map offenders back to bundles for remediation workflows.
+3. **Documentation & Developer Experience (Phase 5)** – expand CLI docs, add API references for the datastore, and publish guidance on enabling required system entitlements.
+4. **Production Deployment (Phase 6)** – code signing, app notarization, distribution via App Store or website.
 
 ### Menu Bar Implementation Plan
 - **Phase 0 – Data plumbing** ✅: a `MenuBarState` observable now aggregates system metrics, suspects, and diagnostic hints for the UI.
