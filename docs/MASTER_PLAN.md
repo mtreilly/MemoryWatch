@@ -22,7 +22,10 @@
 - **Phase 1 – SwiftUI shell** ✅: initial `MenuBarExtra` shows metrics, suspects, hints, and includes quick actions (open folders, launch status).
 - **Phase 2 – Historical panes** ✅: the menu bar streams recent snapshots via a history provider, renders memory/swap sparklines, overlays SSD-wear estimates, and supports drill-down into point diagnostics.
 - **Phase 3 – Alerting hooks** ✅: configurable quiet hours, persistence for delivered alerts across restarts, and WAL/swap/pressure warnings are surfaced through both notifications and the menu UI.
-- **Phase 4 – Polish**: add preferences (update cadence, retention window overrides), accessibility audits (Dynamic Type, VoiceOver labels), and export options for quick sharing of current status.
+- **Phase 4 – Polish** (IN PROGRESS): add preferences (update cadence, retention window overrides), accessibility audits (Dynamic Type, VoiceOver labels), and export options for quick sharing of current status.
+  - Status: App successfully built and installed to `/Applications/MemoryWatch.app`
+  - Menu bar icon verified: uses `memorychip` system image
+  - Next: Implement notification preferences sheet refinements, keyboard navigation, and VoiceOver accessibility labels
 
 ## Operational Guidelines
 - Keep the monitoring loop lightweight: favour cached statements, avoid repeated tool launches, and batch I/O where possible.

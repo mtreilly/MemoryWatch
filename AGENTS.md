@@ -1,14 +1,43 @@
 # MemoryWatch Agent Notes
-- Primary runtime is the Swift `memwatch` CLI/daemon; prefer it over the legacy shell script to keep memory collection efficient.
+
+## Current Status
+- ✅ **Menu Bar App (Phase 1-3 Complete)**: SwiftUI menu bar extra built, tested, and installed to `/Applications/MemoryWatch.app`
+  - Real-time memory/swap metrics display
+  - Leak detection with regression-based heuristics
+  - Memory history charts with point drill-down
+  - Configurable notifications with quiet hours
+  - System alerts (memory pressure, swap, WAL thresholds)
+- 🔄 **Phase 4 – Polish (IN PROGRESS)**: Improving accessibility (keyboard nav, VoiceOver), adding preference UI refinements, export functionality
+
+## Architecture
+
+### Data & Storage
 - Persistent data lives in `~/MemoryWatch/data/memorywatch.sqlite` with WAL + prepared statements—consult `SQLiteStore.swift` before adding new tables.
 - Leak detection now relies on regression-based heuristics (see `LeakHeuristics.swift`); keep tests in `MemoryWatchApp/Tests` green when tuning thresholds.
-- Reporting tooling has moved to the SQLite backend; `analyze.py` can still read legacy CSV files for backwards compatibility.
-- `memwatch status` surfaces datastore health (snapshot counts, retention window, WAL size) via the SQLite store—run it for sanity checks after long daemon sessions.
-- Runtime-specific diagnostic hints are generated in `RuntimeDiagnostics.swift`; extend mappings when supporting new runtimes (Python/Java/Ruby/Go/etc.) and keep commands actionable.
-- `MenuBarState.swift` exposes an observable snapshot (metrics, suspects, hints) for the future menu bar extra—reuse it instead of re-querying the system from UI code.
-- The SwiftUI menu bar companion builds from target `MemoryWatchMenuBar`; it consumes `MenuBarState` and only reads from the SQLite store—keep its UI responsive by using the state container rather than direct system calls.
-- Quiet hours and notification preferences live in `NotificationPreferences.swift`; use `memwatch notifications --show` to inspect/update settings and remember that menu bar alerts honor these preferences and persist delivery history across restarts.
-- System pressure, swap, and WAL-size alerts are persisted via `ProcessMonitor` and rendered in the menu bar overview alongside swap/SSD history—ensure new alert types round-trip through analyzer/reporting and analyzer summaries now include the preference snapshot.
--- Use `memwatch diagnostics <PID>` (also triggered from the menu bar or leak notifications) to execute runtime-specific collectors; outputs land in `~/MemoryWatch/samples` and alerts retain metadata/links.
+- `SnapshotHistoryProvider.swift` loads historical data for charts; caches computed metrics (cumulative wear, top process per snapshot).
+
+### Monitoring Loop
+- Primary runtime is the Swift `memwatch` CLI/daemon; prefer it over the legacy shell script to keep memory collection efficient.
+- `ProcessMonitor.swift` drives the monitoring loop, persists snapshots, and generates system/WAL/swap alerts.
+- `memwatch status` surfaces datastore health (snapshot counts, retention window, WAL size) via the SQLite store—run it for sanity checks.
+
+### Diagnostics & Runtime Support
+- Runtime-specific diagnostic hints are generated in `RuntimeDiagnostics.swift`; extend mappings when supporting new runtimes (Python/Java/Ruby/Go/etc.).
+- Use `memwatch diagnostics <PID>` (also triggered from menu bar or leak notifications) to execute collectors; outputs land in `~/MemoryWatch/samples` and metadata stored in alerts.
+- `DiagnosticExecutor.swift` handles runtime detection and artifact capture.
+
+### Menu Bar UI
+- `MenuBarState.swift` exposes an observable snapshot (metrics, suspects, hints, alerts) for the menu bar—reuse it instead of re-querying system.
+- `MenuBarApp.swift` (target `MemoryWatchMenuBar`) builds the SwiftUI interface; keep it responsive by reading from `MenuBarState` and SQLite, never direct syscalls.
+- `NotificationPreferences.swift` handles quiet hours, delivery tracking; `NotificationPreferencesSheet.swift` provides the preferences UI.
+- `DeliveredAlertHistoryStore.swift` persists notification delivery state across app restarts to avoid alert spam.
+
+### Reporting & Analysis
+- Reporting tooling has moved to SQLite backend; `analyze.py` can read both SQLite and legacy CSV for backwards compatibility.
+- Analyzer updates now include preference snapshot and alert metadata for full traceability.
+
+## Guidelines
+- Keep the monitoring loop lightweight: favour cached statements, avoid repeated tool launches, and batch I/O where possible.
+- Treat alerts as actionable: every high/critical alert should have accompanying diagnostics (sample, leak report, or runtime-specific probe).
+- Commit early and often; tests (`swift test`, `./analyze.py`) must pass before commits.
 - Roadmap and outstanding tasks are tracked in `docs/MASTER_PLAN.md`; update both files when advancing the plan.
-- Commit regularly with clear summaries, and run `swift test` plus `./analyze.py` prior to opening a PR.
