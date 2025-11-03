@@ -1,327 +1,349 @@
 # MemoryWatch
 
-A comprehensive macOS memory monitoring system designed to detect memory leaks, track swap usage, and prevent SSD wear from excessive swap usage.
+Advanced memory monitoring and leak detection for macOS, featuring intelligent orphan resource detection, runtime-specific diagnostics, and comprehensive data persistence.
+
+![Status](https://img.shields.io/badge/status-active-brightgreen)
+![Platform](https://img.shields.io/badge/platform-macOS-blue)
+![Swift](https://img.shields.io/badge/swift-5.9+-orange)
+![License](https://img.shields.io/badge/license-MIT-green)
 
 ## Features
 
-### 🔍 Memory Leak Detection
-- Automatic detection of processes with rapid memory growth (>100MB)
-- Tracks process memory over time to identify leaks
-- Captures detailed samples using macOS `sample` and `leaks` tools
+### Core Memory Monitoring
+- **Real-time process tracking**: Memory, CPU, I/O metrics
+- **Persistent snapshots**: SQLite storage with WAL optimization
+- **System metrics**: Memory pressure, swap usage, cache efficiency
+- **Process filtering**: By name, PID, or network port
 
-### 💾 Swap Monitoring
-- Real-time swap usage tracking
-- SSD wear estimation from swap writes
-- Alerts when swap usage exceeds thresholds
+### Leak Detection
+- **Regression-based analysis**: Statistical growth pattern detection
+- **High confidence**: Only alerts on probable leaks, not normal variation
+- **Configurable thresholds**: Customize for your workload (default: 50MB/24h)
+- **Historical trending**: 3-day retention with configurable windows
 
-### 📊 Analysis & Reporting
-- Generate daily/weekly memory usage reports
-- Identify top memory consumers
-- Track memory growth trends
-- Historical data analysis
+### Runtime Diagnostics
+- **Chromium/Chrome/Electron**: V8 heap dump analysis
+- **Node.js**: Heap snapshot collection with leak patterns
+- **Xcode/Native**: Malloc stack logs via xcrun xctrace
+- **Python**: Memory profiler integration
+- **Extensible**: Add custom runtimes via ToolchainAdapter protocol
 
-### 🖥️ Native macOS GUI (SwiftUI)
-- Real-time memory monitoring
-- System overview with memory pressure indicators
-- Process list with search and sorting
-- Menu bar integration for quick access
-- Zero JavaScript - pure native performance
+### Orphan Detection
+- **Deleted-but-open files**: Find space-consuming deleted files still held by processes
+- **Stale swapfiles**: Identify unused /var/vm accumulation
+- **Zombie processes**: Report unreaped children
+- **Suspended processes**: Find stuck applications
+- **Automated remediation**: Specific cleanup commands
 
-## Components
-
-### 1. Memory Watcher Script (`memory_watcher.sh`)
-
-Background daemon that monitors system memory continuously.
-
-**Features:**
-- Logs top N memory-consuming processes
-- Tracks swap usage and pressure
-- Auto-samples processes exceeding thresholds
-- Detects potential memory leaks
-- Minimal overhead (runs every 30s by default)
-
-**Usage:**
-```bash
-# Run with defaults
-./memory_watcher.sh
-
-# Custom configuration
-INTERVAL_SEC=60 TOP_N=15 RSS_ALERT_MB=2048 ./memory_watcher.sh
-
-# Run in background
-nohup ./memory_watcher.sh > /dev/null 2>&1 &
-```
-
-**Configuration:**
-- `INTERVAL_SEC` - Seconds between snapshots (default: 30)
-- `TOP_N` - Number of top processes to log (default: 10)
-- `RSS_ALERT_MB` - Sample process if RSS >= this (default: 1024)
-- `SWAP_ALERT_MB` - Alert if swap used >= this (default: 512)
-- `LEAK_GROWTH_MB` - Flag potential leak if growth >= this (default: 100)
-- `LEAK_CHECK_INTERVALS` - Check for leaks every N intervals (default: 10)
-
-### 2. Analysis Tool (`analyze.py`)
-
-Generate comprehensive reports from collected data (also available via the Swift CLI).
-
-**Usage:**
-```bash
-# Generate report for last 24 hours
-./analyze.py
-
-# Custom time range (hours)
-./analyze.py 48
-
-# Generate weekly report
-./analyze.py 168
-```
-
-**Output:**
-- Top memory growth processes
-- Swap usage statistics
-- SSD wear estimates
-- Potential memory leak alerts
-
-### 3. SwiftUI GUI App (`MemoryWatchApp`)
-
-Native macOS application for real-time monitoring.
-
-**Features:**
-- **Overview Tab**: System memory, swap usage, top processes
-- **Processes Tab**: Searchable table of all running processes
-- **Alerts Tab**: Memory leak warnings and high usage alerts
-- **Menu Bar**: Quick access to key metrics
-
-**Building:**
-```bash
-# Build the app
-./build_app.sh
-
-# Or manually with Xcode
-cd MemoryWatchApp
-xcodebuild -scheme MemoryWatchApp -configuration Release build
-
-# Install to Applications
-cp -r MemoryWatchApp/build/Build/Products/Release/MemoryWatch.app /Applications/
-```
-
-**Requirements:**
-- macOS 13.0+ (Ventura or later)
-- Xcode 14.0+
-- Swift 5.7+
-
-## Data Files
-
-All data is stored in `~/MemoryWatch/`:
-
-| File | Description |
-|------|-------------|
-| `memory_log.csv` | Top N processes per interval with memory stats |
-| `swap_history.csv` | Swap usage over time with pressure data |
-| `memory_leaks.log` | Potential memory leak detections |
-| `events.log` | High-level events and sampling triggers |
-| `samples/` | Detailed process samples from `sample` tool |
-| `report_*.txt` | Generated analysis reports |
+### Menu Bar App
+- **Real-time metrics**: Memory, swap, process count
+- **Historical sparklines**: Memory/swap trends
+- **Quick actions**: Open logs, launch diagnostics
+- **Accessibility**: Full keyboard navigation and VoiceOver support
+- **Native SwiftUI**: Zero JavaScript, pure native performance
 
 ## Quick Start
 
-1. **Clone and setup:**
-   ```bash
-   cd ~/MemoryWatch
-   chmod +x memory_watcher.sh analyze.py build_app.sh
-   ```
+### Installation
 
-2. **Start monitoring:**
-   ```bash
-   # Terminal mode
-   ./memory_watcher.sh
-
-   # Or background mode
-   nohup ./memory_watcher.sh > /dev/null 2>&1 &
-   ```
-
-3. **Build CLI tool:**
-   ```bash
-   ./build_app.sh
-   # Then run (from repo root)
-   ./MemoryWatchApp/.build/release/MemoryWatch snapshot
-   ./MemoryWatchApp/.build/release/MemoryWatch daemon
-   ```
-
-4. **Generate reports:**
-   ```bash
-   ./analyze.py
-   ```
-
-## LaunchAgent Setup (Auto-start on boot)
-
-Create `~/Library/LaunchAgents/com.memorywatch.daemon.plist`:
-
-```xml
-<?xml version="1.0" encoding="UTF-8"?>
-<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
-<plist version="1.0">
-<dict>
-    <key>Label</key>
-    <string>com.memorywatch.daemon</string>
-    <key>ProgramArguments</key>
-    <array>
-        <string>/Users/YOUR_USERNAME/MemoryWatch/memory_watcher.sh</string>
-    </array>
-    <key>RunAtLoad</key>
-    <true/>
-    <key>KeepAlive</key>
-    <true/>
-    <key>StandardOutPath</key>
-    <string>/Users/YOUR_USERNAME/MemoryWatch/daemon.log</string>
-    <key>StandardErrorPath</key>
-    <string>/Users/YOUR_USERNAME/MemoryWatch/daemon.err</string>
-</dict>
-</plist>
-```
-
-Load the agent:
 ```bash
-launchctl load ~/Library/LaunchAgents/com.memorywatch.daemon.plist
+# Build from source
+cd MemoryWatchApp
+swift build -c release
+
+# Install to /usr/local/bin
+cp .build/release/MemoryWatch /usr/local/bin/
 ```
 
-## Understanding the Output
+### First Commands
 
-### CLI Quick Reference
+```bash
+# View system memory status
+memwatch status
 
-Use `memwatch --help` to list subcommands.
+# Start 1-minute monitoring session
+memwatch monitor -d 60
 
-- Snapshot:
-  - `memwatch snapshot` (human)
-  - `memwatch snapshot --json --min-mem-mb 30 --top 20`
-- Daemon:
-  - `memwatch daemon --interval 30 --min-mem-mb 50 --swap-warn-mb 1024 --pageouts-warn-rate 100`
-- Suspects:
-  - `memwatch suspects` (human)
-  - `memwatch suspects --json --min-level medium --max 10`
-- Report:
-  - `memwatch report` (human)
-  - `memwatch report --json --min-level medium --recent-alerts 20`
-- Disk I/O:
-  - `memwatch io --sample-ms 1000 --top 20`
-- Deleted-but-open files:
-  - `memwatch dangling-files`
+# Analyze memory leaks from last 24 hours
+memwatch leaks
 
-### Memory Leak Detection
-A process is flagged as a potential leak when:
-- It grows by >100MB between checks (configurable)
-- Growth is consistent over multiple intervals
-
-Example alert:
+# Detect orphaned resources
+memwatch orphans
 ```
-[2025-10-30 08:30:00] POTENTIAL LEAK: Chrome (PID 1234) grew 250MB: 1800MB -> 2050MB
-```
-
-### Swap Usage Alerts
-High swap usage (>1GB) triggers warnings because:
-- Causes system slowdown
-- Increases SSD wear
-- May indicate insufficient RAM
-
-### SSD Wear Estimation
-The analyzer estimates SSD writes from swap usage:
-- Each swap operation writes to SSD
-- Excessive swap can reduce SSD lifespan
-- Monitor `estimated_ssd_writes_mb` in reports
-
-## Performance Impact
-
-| Component | CPU Usage | Memory Usage | Disk I/O |
-|-----------|-----------|--------------|----------|
-| `memory_watcher.sh` | <1% | ~5MB | Minimal (30s interval) |
-| `analyze.py` | <5% (when running) | ~20MB | Read-only |
-| CLI Tool | <1% | ~3MB | Read-only (instant) |
-
-The monitoring system is designed to have minimal overhead while providing comprehensive insights.
-
-## Troubleshooting
-
-### Sample collection fails
-```
-[2025-10-30 08:30:00] sample failed for pid=12345
-```
-
-**Solution:**
-1. Check if `sample` tool exists: `which sample`
-2. Process may have terminated before sampling
-3. Increase `INTERVAL_SEC` to catch longer-lived processes
-
-### High CPU usage from watcher
-- Increase `INTERVAL_SEC` (e.g., 60s instead of 30s)
-- Reduce `TOP_N` (fewer processes to track)
-- Disable leak checking: `LEAK_CHECK_INTERVALS=0`
-
-### CLI tool won't build
-- Install Xcode Command Line Tools: `xcode-select --install`
-- Check Swift version: `swift --version` (requires 5.7+)
-- Check macOS version (requires 13.0+)
 
 ## Architecture
 
+MemoryWatch combines high-performance system monitoring with intelligent diagnostics:
+
 ```
-┌─────────────────────────────────────────────────────┐
-│                  MemoryWatch System                 │
-├─────────────────────────────────────────────────────┤
-│                                                     │
-│  ┌──────────────┐      ┌──────────────┐            │
-│  │   Bash       │      │   Python     │            │
-│  │   Watcher    │─────▶│   Analyzer   │            │
-│  │  (daemon)    │      │  (reports)   │            │
-│  └──────────────┘      └──────────────┘            │
-│         │                                           │
-│         ▼                                           │
-│  ┌──────────────────────────────────┐              │
-│  │      Data Files (CSV/Logs)       │              │
-│  │  • memory_log.csv                │              │
-│  │  • swap_history.csv              │              │
-│  │  • memory_leaks.log              │              │
-│  └──────────────────────────────────┘              │
-│         │                                           │
-│         ▼                                           │
-│  ┌──────────────┐                                  │
-│  │   SwiftUI    │                                  │
-│  │   GUI App    │  ◀─── Direct system APIs         │
-│  │  (realtime)  │                                  │
-│  └──────────────┘                                  │
-│                                                     │
-└─────────────────────────────────────────────────────┘
+ProcessMonitor (10s) → SystemMetrics → SQLiteStore (WAL)
+                           ↓
+                    ProcessSnapshot
+                           ↓
+                    LeakHeuristics (regression)
+                           ↓
+                    MemoryAlert → ToolchainAdapter → Artifacts
+                           ↓
+                    OrphanDetector (deleted files, swap, zombies)
+                           ↓
+                    MenuBarApp (real-time UI)
 ```
 
-## Why Swift CLI over Golang or Python?
+**Core Components:**
+- **ProcessMonitor**: Collects system snapshots every 10 seconds
+- **SystemMetrics**: Gathers CPU, memory, I/O, swap statistics
+- **SQLiteStore**: Persists data with WAL optimization for low latency
+- **LeakHeuristics**: Regression-based growth pattern analysis
+- **OrphanDetector**: Scans for orphaned resources
+- **ToolchainIntegration**: Coordinates runtime-specific artifact capture
+- **MenuBarApp**: SwiftUI real-time monitoring with accessibility
 
-We chose Swift for the CLI tool because:
+## Documentation
 
-1. **Native Performance** - Direct access to macOS system APIs with zero overhead
-2. **Lightweight** - Single compiled binary (~3MB), no runtime dependencies
-3. **System Integration** - Full access to task_info, vm_statistics, and process APIs
-4. **Fast Startup** - Instant execution, no interpreter startup time
-5. **Type Safety** - Compile-time guarantees for system-level code
-6. **No Bloat** - Zero JavaScript, pure native code
+- **[CLI Reference](docs/CLI_REFERENCE.md)** - Full command documentation and examples
+- **[SQLiteStore API](docs/SQLITE_API.md)** - Database persistence API with code examples
+- **[Developer Guide](docs/DEVELOPER_GUIDE.md)** - Extending MemoryWatch with custom adapters
+- **[Entitlements Guide](docs/ENTITLEMENTS.md)** - System permissions and security configuration
+- **[Master Plan](docs/MASTER_PLAN.md)** - Implementation roadmap and architecture decisions
 
-Go would work but lacks direct macOS API access. Python requires interpreter overhead.
+## Usage Examples
+
+### Monitor System Memory
+
+```bash
+# Show current status
+memwatch status
+
+# Top 20 processes by memory
+memwatch status -n 20 --json > status.json
+
+# Sort by CPU usage
+memwatch status --sort cpu
+```
+
+### Detect Memory Leaks
+
+```bash
+# Analyze last 24 hours
+memwatch leaks
+
+# Analyze specific process
+memwatch leaks -p 1234 --confidence 80
+
+# Check last 7 days with tight thresholds
+memwatch leaks --time-window 168 --min-growth 10
+```
+
+### Capture Diagnostics
+
+```bash
+# Capture artifacts for Chrome process
+memwatch diagnostics 1234
+
+# Capture from all available runtimes
+memwatch diagnostics 1234 --all-runtimes
+
+# Save to custom directory
+memwatch diagnostics 1234 -o /tmp/diagnostics
+```
+
+### Find Orphaned Resources
+
+```bash
+# All orphaned resources
+memwatch orphans
+
+# Large deleted files only
+memwatch orphans --deleted-files --min-size 100
+
+# Identify stale swap
+memwatch orphans --stale-swap
+```
+
+### Background Monitoring
+
+```bash
+# Start daemon with alerts
+memwatch daemon --log /var/log/memorywatch.log --alerts
+
+# Monitor with custom interval
+memwatch monitor -i 5 --leak-detection
+
+# Export data
+memwatch export --format csv -o weekly_metrics.csv \
+  --start 2025-10-27 --end 2025-11-03
+```
+
+## Configuration
+
+### Command-Line Options
+
+Most commands support:
+- `--json` - JSON output for scripting
+- `--interval <N>` - Check interval in seconds
+- `--threshold <MB>` - Memory threshold
+- `--output <file>` - Write to file
+
+See [CLI Reference](docs/CLI_REFERENCE.md) for complete options.
+
+### Environment Variables
+
+```bash
+# Data directory
+export MEMORYWATCH_HOME=/var/log/memorywatch
+
+# Log level
+export MEMORYWATCH_LOG_LEVEL=debug
+
+# Custom database
+export MEMORYWATCH_DB=/path/to/custom.sqlite
+```
+
+## Data Storage
+
+MemoryWatch stores all data in `~/MemoryWatch/`:
+
+| File/Directory | Purpose |
+|--------|---------|
+| `data/memorywatch.sqlite` | Main database with snapshots and alerts |
+| `data/memorywatch.sqlite-wal` | Write-Ahead Log for fast writes |
+| `data/artifacts/` | Captured diagnostic artifacts (heap dumps, profiles) |
+| Logs | Event logs and monitoring records |
+
+## System Requirements
+
+- **OS**: macOS 12.0 or later
+- **Architecture**: arm64 or x86_64
+- **Permissions**:
+  - Full Disk Access (for orphan detection)
+  - Process monitoring (automatic)
+  - Notifications (optional, for alerts)
+- **Disk Space**: ~100MB for 3 days of data
+
+## Performance
+
+- **Memory Overhead**: ~20-30MB resident
+- **CPU Usage**: <1% at 10-second intervals
+- **Disk I/O**: ~2-5MB/hour
+- **Database Size**: ~50MB per 24 hours
+
+### Tuning for Resource-Constrained Systems
+
+```bash
+# Increase check interval
+memwatch config --set update_cadence=30
+
+# Reduce data retention
+memwatch config --set retention_window_hours=24
+
+# Disable expensive detection
+memwatch monitor --no-leak-detection
+```
+
+## Troubleshooting
+
+**Permission Denied Errors**:
+- Grant Full Disk Access: System Preferences > Security & Privacy > Full Disk Access
+- Or use `sudo memwatch orphans`
+
+**High CPU Usage**:
+- Increase monitoring interval: `memwatch monitor --interval 30`
+- Disable leak detection: `--no-leak-detection`
+
+**Database Errors**:
+- Check health: `memwatch status`
+- Reset: `rm ~/MemoryWatch/data/memorywatch.sqlite`
+
+See [Troubleshooting Guide](docs/TROUBLESHOOTING.md) for more issues.
+
+## Integration Examples
+
+### Time Series Database
+
+```bash
+memwatch export --format json | jq '.snapshots[]' | \
+  curl -X POST http://influxdb:8086/write -d @-
+```
+
+### Slack Alerts
+
+```bash
+memwatch monitor --output /tmp/memwatch.log &
+tail -f /tmp/memwatch.log | grep "CRITICAL" | \
+  while read line; do
+    curl -X POST $SLACK_WEBHOOK -d "{\"text\":\"$line\"}"
+  done
+```
+
+### Custom Analysis
+
+```swift
+// Access raw data via SQLiteStore
+let store = try SQLiteStore(url: databaseURL)
+let snapshots = store.getRecentSnapshots(hoursBack: 24)
+let alerts = store.getAlerts(hoursBack: 24)
+```
+
+## Extensibility
+
+MemoryWatch is designed for extension:
+
+- **Custom Adapters**: Implement `ToolchainAdapter` for new runtimes
+- **Custom Detectors**: Extend leak detection with your heuristics
+- **Database Access**: Query raw data via `SQLiteStore` API
+- **CLI Extensions**: Add custom commands via command registry
+
+See [Developer Guide](docs/DEVELOPER_GUIDE.md) for details.
+
+## Why Swift?
+
+We chose Swift for system monitoring because:
+
+1. **Native Performance** - Direct macOS system API access with zero overhead
+2. **Lightweight** - Single binary (~3MB), no runtime dependencies
+3. **Type Safety** - Compile-time guarantees for system-level code
+4. **Fast Startup** - Instant execution, no interpreter overhead
+5. **Accessibility** - VoiceOver/keyboard support in menu bar UI
+6. **No Bloat** - Pure native code, zero JavaScript dependencies
 
 ## Contributing
 
-Contributions welcome! Areas for improvement:
-- Add notification center integration
-- Export reports to CSV/JSON
-- Add charts for historical trends
-- Process-specific memory profiling
-- Network usage correlation
+Contributions welcome! Areas of interest:
+
+- Additional runtime adapters (Go, Rust, Java, PHP)
+- Advanced leak detection heuristics
+- Performance optimizations
+- Documentation improvements
+- Localization support
 
 ## License
 
-MIT License - Feel free to use and modify for your needs.
+MIT License - See LICENSE file
 
-## Credits
+## Roadmap
 
-Built with native macOS technologies:
-- SwiftUI for GUI
-- `vm_statistics` for memory metrics
-- `task_info` for process details
-- `sample` and `leaks` for profiling
+### Completed ✅
+- Phase 1: Core monitoring with SQLite persistence
+- Phase 2: Hardening & telemetry (maintenance, retention, health monitoring)
+- Phase 3: Toolchain integrations (Chrome, Node, Xcode, Python adapters)
+- Phase 4: Orphan detection (deleted files, stale swap, zombies)
+- Phase 5: Documentation & developer experience
+
+### Future 🔮
+- Phase 6: Production deployment (code signing, notarization, distribution)
+- REST API for remote monitoring
+- WebUI dashboard
+- Kubernetes integration
+- Time series database backend plugins
+
+## Support
+
+- **Issues**: Report bugs on GitHub
+- **Discussions**: Ask questions in GitHub Discussions
+- **Docs**: See `/docs` directory for comprehensive guides
+
+---
+
+**Status**: Active Development
+**Last Updated**: November 2025
+**Maintainer**: MemoryWatch Team
