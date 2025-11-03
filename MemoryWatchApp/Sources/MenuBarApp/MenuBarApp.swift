@@ -213,6 +213,8 @@ struct NotificationPreferencesSheet: View {
     @State private var timezoneIdentifier: String
     @State private var quietStartDate: Date
     @State private var quietEndDate: Date
+    @State private var updateCadenceSeconds: Double
+    @State private var retentionWindowHours: Double
     @State private var isSaving = false
     @State private var errorMessage: String?
 
@@ -230,6 +232,8 @@ struct NotificationPreferencesSheet: View {
         _timezoneIdentifier = State(initialValue: quiet.timezoneIdentifier)
         _quietStartDate = State(initialValue: NotificationPreferencesSheet.date(from: quiet.startMinutes, timezone: quiet.timezoneIdentifier))
         _quietEndDate = State(initialValue: NotificationPreferencesSheet.date(from: quiet.endMinutes, timezone: quiet.timezoneIdentifier))
+        _updateCadenceSeconds = State(initialValue: preferences.updateCadenceSeconds)
+        _retentionWindowHours = State(initialValue: Double(preferences.retentionWindowHours))
     }
 
     var body: some View {
@@ -270,6 +274,42 @@ struct NotificationPreferencesSheet: View {
                         .accessibilityHint("When enabled, important notifications can interrupt quiet hours")
                 }
                 .padding(.leading, 4)
+            }
+
+            Divider()
+
+            VStack(alignment: .leading, spacing: 10) {
+                Text("Monitoring & Storage")
+                    .font(.subheadline)
+                    .bold()
+
+                VStack(alignment: .leading, spacing: 4) {
+                    HStack {
+                        Text("Update interval")
+                            .font(.caption)
+                        Spacer()
+                        Text("\(Int(updateCadenceSeconds))s")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+                    Slider(value: $updateCadenceSeconds, in: 5...300, step: 5)
+                        .accessibilityLabel("Update interval slider")
+                        .accessibilityHint("Adjust how often to check memory usage, from 5 to 300 seconds")
+                }
+
+                VStack(alignment: .leading, spacing: 4) {
+                    HStack {
+                        Text("Data retention")
+                            .font(.caption)
+                        Spacer()
+                        Text("\(Int(retentionWindowHours))h")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+                    Slider(value: $retentionWindowHours, in: 1...720, step: 1)
+                        .accessibilityLabel("Retention window slider")
+                        .accessibilityHint("Adjust how long to keep historical data, from 1 to 720 hours")
+                }
             }
 
             if let errorMessage {
@@ -337,7 +377,9 @@ struct NotificationPreferencesSheet: View {
             quietHours: quietHours,
             leakNotificationsEnabled: leakNotificationsEnabled,
             pressureNotificationsEnabled: pressureNotificationsEnabled,
-            allowInterruptionsDuringQuietHours: allowDuringQuietHours
+            allowInterruptionsDuringQuietHours: allowDuringQuietHours,
+            updateCadenceSeconds: updateCadenceSeconds,
+            retentionWindowHours: Int(retentionWindowHours)
         )
     }
 
@@ -351,6 +393,8 @@ struct NotificationPreferencesSheet: View {
         timezoneIdentifier = quiet.timezoneIdentifier
         quietStartDate = NotificationPreferencesSheet.date(from: quiet.startMinutes, timezone: quiet.timezoneIdentifier)
         quietEndDate = NotificationPreferencesSheet.date(from: quiet.endMinutes, timezone: quiet.timezoneIdentifier)
+        updateCadenceSeconds = defaults.updateCadenceSeconds
+        retentionWindowHours = Double(defaults.retentionWindowHours)
     }
 
     private static func date(from minutes: Int, timezone: String) -> Date {

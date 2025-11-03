@@ -51,15 +51,21 @@ public struct NotificationPreferences: Codable, Equatable, Sendable {
     public var leakNotificationsEnabled: Bool
     public var pressureNotificationsEnabled: Bool
     public var allowInterruptionsDuringQuietHours: Bool
+    public var updateCadenceSeconds: TimeInterval
+    public var retentionWindowHours: Int
 
     public init(quietHours: QuietHours? = QuietHours(startMinutes: 22 * 60, endMinutes: 7 * 60),
                 leakNotificationsEnabled: Bool = true,
                 pressureNotificationsEnabled: Bool = true,
-                allowInterruptionsDuringQuietHours: Bool = false) {
+                allowInterruptionsDuringQuietHours: Bool = false,
+                updateCadenceSeconds: TimeInterval = 30,
+                retentionWindowHours: Int = 72) {
         self.quietHours = quietHours
         self.leakNotificationsEnabled = leakNotificationsEnabled
         self.pressureNotificationsEnabled = pressureNotificationsEnabled
         self.allowInterruptionsDuringQuietHours = allowInterruptionsDuringQuietHours
+        self.updateCadenceSeconds = max(5, min(300, updateCadenceSeconds))  // Clamp between 5s and 5m
+        self.retentionWindowHours = max(1, min(720, retentionWindowHours))  // Clamp between 1h and 30d
     }
 
     public static let `default` = NotificationPreferences()
