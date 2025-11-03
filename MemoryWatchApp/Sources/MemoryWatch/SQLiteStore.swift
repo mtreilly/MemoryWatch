@@ -1,5 +1,6 @@
 import Foundation
 import SQLite3
+import Darwin
 
 private let SQLITE_TRANSIENT = unsafeBitCast(-1, to: sqlite3_destructor_type.self)
 private let SQLITE_CHECKPOINT_PASSIVE_MODE = Int32(SQLITE_CHECKPOINT_PASSIVE)
@@ -31,6 +32,8 @@ public final class SQLiteStore {
     private static let maintenanceInterval: TimeInterval = 60 * 30 // 30 minutes
 
     private let databaseURL: URL
+    private let databasePath: String
+    private let databasePathCString: [Int8]
     private let db: OpaquePointer
     private let insertSnapshotStmt: OpaquePointer
     private let insertProcessStmt: OpaquePointer
@@ -41,10 +44,12 @@ public final class SQLiteStore {
 
     public init(url: URL) throws {
         databaseURL = url
+        databasePath = url.path
+        databasePathCString = Array(url.path.utf8CString)
 
         var dbPointer: OpaquePointer?
         let flags = SQLITE_OPEN_CREATE | SQLITE_OPEN_READWRITE | SQLITE_OPEN_FULLMUTEX
-        if sqlite3_open_v2(url.path, &dbPointer, flags, nil) != SQLITE_OK {
+        if sqlite3_open_v2(databasePath, &dbPointer, flags, nil) != SQLITE_OK {
             defer { if let dbPointer { sqlite3_close(dbPointer) } }
             throw SQLiteStoreError.openDatabase(message: SQLiteStore.lastErrorMessage(dbPointer))
         }
@@ -283,11 +288,11 @@ public final class SQLiteStore {
         let quickCheckPassed = runQuickCheckLocked()
 
         let fileManager = FileManager.default
-        let databaseAttributes = (try? fileManager.attributesOfItem(atPath: databaseURL.path)) ?? [:]
+        let databaseAttributes = (try? fileManager.attributesOfItem(atPath: databasePath)) ?? [:]
         let databaseSize = (databaseAttributes[.size] as? NSNumber)?.uint64Value ?? 0
 
-        let walURL = URL(fileURLWithPath: databaseURL.path + "-wal")
-        let walAttributes = (try? fileManager.attributesOfItem(atPath: walURL.path)) ?? [:]
+        let walPath = databasePath + "-wal"
+        let walAttributes = (try? fileManager.attributesOfItem(atPath: walPath)) ?? [:]
         let walSize = (walAttributes[.size] as? NSNumber)?.uint64Value ?? 0
 
         let metaMaintenance = getMetaValueDouble(key: "last_maintenance_ts").map { Date(timeIntervalSince1970: $0) }
@@ -441,10 +446,26 @@ public final class SQLiteStore {
         return samples.reversed()
     }
 
+    @inline(never)
     func currentWALSizeBytes() -> UInt64 {
-        let walURL = URL(fileURLWithPath: databaseURL.path + "-wal")
-        let attributes = (try? FileManager.default.attributesOfItem(atPath: walURL.path)) ?? [:]
-        return (attributes[.size] as? NSNumber)?.uint64Value ?? 0
+        lock.lock()
+        defer { lock.unlock() }
+
+        var walCString = databasePathCString
+        if let last = walCString.last, last == 0 {
+            walCString.removeLast()
+        }
+        walCString.append(contentsOf: [Int8(45), Int8(119), Int8(97), Int8(108), 0]) // "-wal\0"
+
+        var statBuf = stat()
+        let size = walCString.withUnsafeBufferPointer { buffer -> UInt64 in
+            guard let baseAddress = buffer.baseAddress else { return 0 }
+            if stat(baseAddress, &statBuf) == 0 {
+                return UInt64(statBuf.st_size)
+            }
+            return 0
+        }
+        return size
     }
 
     /// Perform database maintenance (cleanup, optimization, WAL checkpoint)

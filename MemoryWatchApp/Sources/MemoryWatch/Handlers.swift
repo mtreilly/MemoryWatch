@@ -100,13 +100,11 @@ enum CLI {
         // Try to load previous state
         try? monitor.loadState(from: stateFile)
 
-        var maintenanceScheduler: MaintenanceScheduler?
         var retentionManager: RetentionManager?
         if let store {
             let alertHandler: @Sendable (MemoryAlert) -> Void = { alert in
                 CLI.globalMonitor?.recordAlert(alert)
             }
-            maintenanceScheduler = MaintenanceScheduler(store: store, alertHandler: alertHandler)
             retentionManager = RetentionManager(store: store,
                                                 alertHandler: alertHandler,
                                                 preferencesLoader: { NotificationPreferencesStore.loadSync() })
@@ -151,7 +149,6 @@ enum CLI {
             // Record snapshot
             monitor.recordSnapshot(processes: processes, metrics: metrics, timestamp: sampleDate)
 
-            maintenanceScheduler?.checkAndMaintainIfNeeded()
             if let retentionManager {
                 let now = Date()
                 if now.timeIntervalSince(lastRetentionInvocation) >= 60 {

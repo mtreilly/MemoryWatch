@@ -17,6 +17,7 @@ public class MaintenanceScheduler {
     private var lastWalCriticalAlert: Date = .distantPast
     private let walWarningDebounce: TimeInterval = 300  // Only alert once per 5 minutes
     private let walCriticalDebounce: TimeInterval = 60  // Only alert once per minute
+    private var hasPerformedInitialCheck = false
 
     // Task management
     private var schedulerTask: Task<Void, Never>?
@@ -50,6 +51,10 @@ public class MaintenanceScheduler {
         }
 
         lastMaintenanceCheck = now
+        if !hasPerformedInitialCheck {
+            hasPerformedInitialCheck = true
+            return
+        }
 
         // Check WAL size first
         let walSize = store.currentWALSizeBytes()

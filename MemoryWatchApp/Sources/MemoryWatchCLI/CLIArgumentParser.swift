@@ -3,7 +3,7 @@ import ArgumentParser
 import MemoryWatchCore
 
 @main
-struct MemoryWatchCLI: ParsableCommand {
+struct MemoryWatchCLI: AsyncParsableCommand {
     static let configuration = CommandConfiguration(
         commandName: "memwatch",
         abstract: "macOS Memory Monitoring & Leak Detection",

@@ -11,20 +11,30 @@ final class DaemonController: ObservableObject {
     @Published private(set) var launchAtLogin: Bool = false
 
     private var launchedProcess: Process?
+    private let shouldAutoStart: Bool
+    private var didBootstrap = false
     private let launchAgentURL: URL
     private let launchAgentIdentifier = "com.memorywatch.app.login"
     private var cachedExecutablePath: String?
     private let fileManager = FileManager.default
 
     init(autoStart: Bool = true) {
+        shouldAutoStart = autoStart
         let agentsDir = FileManager.default.homeDirectoryForCurrentUser
             .appendingPathComponent("Library/LaunchAgents", isDirectory: true)
         launchAgentURL = agentsDir.appendingPathComponent("\(launchAgentIdentifier).plist")
 
-        refreshStatus()
         launchAtLogin = FileManager.default.fileExists(atPath: launchAgentURL.path)
+    }
 
-        if autoStart, !isRunning {
+    func bootstrapIfNeeded() {
+        guard !didBootstrap else { return }
+        didBootstrap = true
+
+        NSLog("MemoryWatchMenuBar: Bootstrapping daemon controller")
+        refreshStatus()
+
+        if shouldAutoStart, !isRunning {
             startDaemon()
         }
     }
@@ -55,6 +65,7 @@ final class DaemonController: ObservableObject {
 
         do {
             try process.run()
+            NSLog("MemoryWatchMenuBar: Launching daemon via \(executable)")
             launchedProcess = process
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { [weak self] in
                 self?.refreshStatus()
@@ -111,7 +122,7 @@ final class DaemonController: ObservableObject {
     }
 
     private func executableCandidates() -> [String] {
-        var candidates: [String] = []
+        var candidates = bundleExecutableCandidates()
 
         let whichResult = runShell("/usr/bin/env", arguments: ["which", "memwatch"])
         if whichResult.status == 0 {
@@ -120,8 +131,6 @@ final class DaemonController: ObservableObject {
                 candidates.append(trimmed)
             }
         }
-
-        candidates.append(contentsOf: bundleExecutableCandidates())
 
         return candidates
     }

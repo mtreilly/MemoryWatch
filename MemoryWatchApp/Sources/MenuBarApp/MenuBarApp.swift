@@ -1,6 +1,7 @@
 import SwiftUI
 import Combine
 import AppKit
+import Foundation
 import UserNotifications
 #if canImport(Charts)
 import Charts
@@ -10,13 +11,17 @@ import MemoryWatchCore
 @main
 struct MemoryWatchMenuBarApp: App {
     @StateObject private var state: MenuBarState
-    @StateObject private var daemonController: DaemonController
+    private let daemonController: DaemonController
     private let monitor: ProcessMonitor?
     private let historyProvider: SnapshotHistoryProvider?
 
     init() {
+        let daemonController = DaemonController()
+        self.daemonController = daemonController
+
         try? MemoryWatchPaths.ensureDirectoriesExist()
         MemoryWatchPaths.migrateLegacyFiles()
+
         if let store = try? SQLiteStore(url: MemoryWatchPaths.databaseFile) {
             let monitor = ProcessMonitor(store: store)
             try? monitor.loadState(from: MemoryWatchPaths.stateFile)
@@ -26,15 +31,16 @@ struct MemoryWatchMenuBarApp: App {
             _state = StateObject(wrappedValue: MenuBarState(historyLoader: {
                 await provider.loadHistory()
             }))
-            _daemonController = StateObject(wrappedValue: DaemonController())
         } else {
             self.monitor = nil
             self.historyProvider = nil
             _state = StateObject(wrappedValue: MenuBarState())
-            _daemonController = StateObject(wrappedValue: DaemonController())
         }
 
         UNUserNotificationCenter.current().delegate = NotificationDelegate.shared
+        DispatchQueue.main.async {
+            daemonController.bootstrapIfNeeded()
+        }
         registerNotificationCategories()
     }
 
@@ -539,10 +545,10 @@ struct MenuBarContentView: View {
             }
         }
         .onAppear {
+            daemonController.bootstrapIfNeeded()
             state.refresh(processMonitor: monitor)
             updateRefreshTimer(with: state.snapshot.notificationPreferences.updateCadenceSeconds)
             requestNotificationAuthorization()
-            daemonController.refreshStatus()
         }
         .onReceive(refreshTimer) { _ in
             state.refresh(processMonitor: monitor)
