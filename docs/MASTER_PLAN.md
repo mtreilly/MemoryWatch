@@ -18,11 +18,20 @@
 - ✅ **Type Safety**: Made MemoryAlert and AlertType Sendable for safe concurrent access.
 - ✅ **Comprehensive Testing**: 10 new unit tests covering maintenance, retention, and health monitoring (24 total tests passing).
 
+## Phase 3: Toolchain Integrations (COMPLETE) ✅
+- ✅ **ToolchainAdapter Protocol**: Abstraction layer for runtime-specific diagnostic tools (capture & analyze).
+- ✅ **Chromium Adapter**: Captures V8 heap dumps via SIGUSR2 for Chrome/Electron processes.
+- ✅ **Xcode Adapter**: Uses xcrun xctrace to capture malloc stack logs with 30-second recordings.
+- ✅ **Node Adapter**: Triggers Node.js heap snapshots and analyzes for leak patterns (detached, listener, callback, closure).
+- ✅ **ToolchainAdapterRegistry**: Factory pattern for adapter discovery and custom registration.
+- ✅ **ToolchainIntegration**: Coordinates adapters with alert system; auto-triggers when suspicion > 0.7.
+- ✅ **Artifact Metadata**: Stores paths, analysis results, and suspected leak info in alert metadata.
+- ✅ **Comprehensive Testing**: 21 new unit tests for adapters, analysis, registry, and integration (45 total tests passing).
+
 ## Next Milestones
-1. **Toolchain Integrations (Phase 3)** – expand runtime diagnostic adapters (Chromium heap dumps, Xcode malloc stack logging, Node heap snapshots) and capture their artefacts alongside alerts.
-2. **Orphan/Residue Detection (Phase 4)** – extend filesystem sweeps for deleted-but-open files, stale swapfiles, and orphaned processes; map offenders back to bundles for remediation workflows.
-3. **Documentation & Developer Experience (Phase 5)** – expand CLI docs, add API references for the datastore, and publish guidance on enabling required system entitlements.
-4. **Production Deployment (Phase 6)** – code signing, app notarization, distribution via App Store or website.
+1. **Orphan/Residue Detection (Phase 4)** – extend filesystem sweeps for deleted-but-open files, stale swapfiles, and orphaned processes; map offenders back to bundles for remediation workflows.
+2. **Documentation & Developer Experience (Phase 5)** – expand CLI docs, add API references for the datastore, and publish guidance on enabling required system entitlements.
+3. **Production Deployment (Phase 6)** – code signing, app notarization, distribution via App Store or website.
 
 ### Menu Bar Implementation Plan
 - **Phase 0 – Data plumbing** ✅: a `MenuBarState` observable now aggregates system metrics, suspects, and diagnostic hints for the UI.
