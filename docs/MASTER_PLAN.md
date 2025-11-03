@@ -36,9 +36,17 @@
 - ✅ **Unified Report Types**: OrphanReport enum with severity levels and automated remediation suggestions.
 - ✅ **Comprehensive Testing**: 28 new unit tests for all detection methods, report types, and properties.
 
+## Phase 5: Documentation & Developer Experience (COMPLETE) ✅
+- ✅ **CLI Reference**: Complete command documentation with 8 commands (status, monitor, leaks, diagnostics, orphans, daemon, export, config)
+- ✅ **SQLiteStore API**: Full API reference with code examples, retention policies, performance considerations, batch operations
+- ✅ **Developer Guide**: Custom adapter development, leak detection extension, database customization, webhook integration patterns
+- ✅ **Entitlements Guide**: System permissions, App Sandbox configuration, full disk access setup, troubleshooting permission errors
+- ✅ **Troubleshooting Guide**: 20+ common issues with solutions covering permissions, database, performance, CLI, and daemon problems
+- ✅ **README Updates**: Modernized with Phase 1-5 completion, quick start guide, architecture overview, integration examples
+- ✅ **50+ Code Examples**: CLI usage, API patterns, custom adapters, webhook integration, time series database streaming
+
 ## Next Milestones
-1. **Documentation & Developer Experience (Phase 5)** – expand CLI docs, add API references for the datastore, and publish guidance on enabling required system entitlements.
-2. **Production Deployment (Phase 6)** – code signing, app notarization, distribution via App Store or website.
+1. **Production Deployment (Phase 6)** – code signing, app notarization, distribution via App Store or website.
 
 ### Menu Bar Implementation Plan
 - **Phase 0 – Data plumbing** ✅: a `MenuBarState` observable now aggregates system metrics, suspects, and diagnostic hints for the UI.
