@@ -238,22 +238,36 @@ struct NotificationPreferencesSheet: View {
                 .font(.headline)
 
             Toggle("Leak alerts", isOn: $leakNotificationsEnabled)
+                .accessibilityLabel("Leak alerts toggle")
+                .accessibilityHint("Enable or disable notifications for detected memory leaks")
             Toggle("System pressure / swap alerts", isOn: $pressureNotificationsEnabled)
+                .accessibilityLabel("System pressure alerts toggle")
+                .accessibilityHint("Enable or disable notifications for memory pressure and swap usage")
 
             Divider()
 
             Toggle("Enable quiet hours", isOn: $quietHoursEnabled)
+                .accessibilityLabel("Quiet hours toggle")
+                .accessibilityHint("Enable or disable quiet hours scheduling")
 
             if quietHoursEnabled {
                 VStack(alignment: .leading, spacing: 10) {
                     HStack {
                         DatePicker("Start", selection: $quietStartDate, displayedComponents: .hourAndMinute)
+                            .accessibilityLabel("Quiet hours start time")
+                            .accessibilityHint("Set the time when quiet hours begin")
                         DatePicker("End", selection: $quietEndDate, displayedComponents: .hourAndMinute)
+                            .accessibilityLabel("Quiet hours end time")
+                            .accessibilityHint("Set the time when quiet hours end")
                     }
                     TextField("Time zone", text: $timezoneIdentifier)
                         .textFieldStyle(.roundedBorder)
+                        .accessibilityLabel("Timezone field")
+                        .accessibilityHint("Enter a timezone identifier for quiet hours scheduling")
                     Toggle("Allow notifications during quiet hours", isOn: $allowDuringQuietHours)
                         .toggleStyle(.switch)
+                        .accessibilityLabel("Allow interruptions during quiet hours")
+                        .accessibilityHint("When enabled, important notifications can interrupt quiet hours")
                 }
                 .padding(.leading, 4)
             }
@@ -262,25 +276,38 @@ struct NotificationPreferencesSheet: View {
                 Text(errorMessage)
                     .font(.caption)
                     .foregroundStyle(.pink)
+                    .accessibilityLabel("Error message")
+                    .accessibilityValue(errorMessage)
             }
 
             HStack {
                 Button("Reset to Defaults") {
                     applyDefaults()
                 }
+                .accessibilityLabel("Reset to defaults")
+                .accessibilityHint("Restore all settings to their default values")
+                .keyboardShortcut("r", modifiers: .command)
+
                 Spacer()
+
                 Button("Cancel", role: .cancel) {
                     dismiss()
                 }
+                .accessibilityLabel("Cancel")
+                .accessibilityHint("Close preferences without saving changes")
+                .keyboardShortcut(.cancelAction)
+
                 Button("Save") {
                     Task { await persistChanges() }
                 }
+                .accessibilityLabel("Save preferences")
+                .accessibilityHint("Save changes and close preferences")
                 .keyboardShortcut(.defaultAction)
                 .disabled(isSaving)
             }
         }
         .padding(20)
-        .frame(minWidth: 320)
+        .frame(minWidth: 320, maxWidth: 500)
     }
 
     private func persistChanges() async {
@@ -421,13 +448,15 @@ struct MenuBarContentView: View {
             if let primaryAlert = snapshot.systemAlerts.first {
                 SystemAlertBanner(alert: primaryAlert)
             }
-            Picker("", selection: $selectedTab) {
+            Picker("View", selection: $selectedTab) {
                 Text("Overview").tag(Tab.overview)
                 Text("History").tag(Tab.history)
                 Text("Diagnostics").tag(Tab.diagnostics)
             }
             .pickerStyle(.segmented)
             .labelsHidden()
+            .accessibilityLabel("Tab selector")
+            .accessibilityHint("Choose between Overview, History, or Diagnostics view")
 
             switch selectedTab {
             case .overview:
@@ -629,6 +658,8 @@ struct HeaderView: View {
             Spacer()
             PressureIndicator(pressure: snapshot.metrics.pressure)
         }
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel("MemoryWatch status")
     }
 }
 
@@ -636,20 +667,45 @@ struct PressureIndicator: View {
     let pressure: String
 
     var body: some View {
-        Text("\(Self.icon(for: pressure)) \(pressure)")
-            .font(.caption)
-            .padding(.horizontal, 8)
-            .padding(.vertical, 4)
-            .background(Color(nsColor: .windowBackgroundColor))
-            .clipShape(Capsule())
+        HStack(spacing: 4) {
+            Image(systemName: iconName)
+                .foregroundStyle(iconColor)
+            Text(pressure)
+        }
+        .font(.caption)
+        .padding(.horizontal, 8)
+        .padding(.vertical, 4)
+        .background(Color(nsColor: .windowBackgroundColor))
+        .clipShape(Capsule())
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel("System memory pressure")
+        .accessibilityValue(pressureDescription)
     }
 
-    private static func icon(for pressure: String) -> String {
+    private var pressureDescription: String {
         switch pressure {
-        case "Normal": return "🟢"
-        case "Warning": return "🟡"
-        case "Critical": return "🔴"
-        default: return "⚪"
+        case "Normal": return "Normal, system has sufficient memory available"
+        case "Warning": return "Warning, system memory usage is elevated"
+        case "Critical": return "Critical, system is experiencing high memory pressure"
+        default: return pressure
+        }
+    }
+
+    private var iconName: String {
+        switch pressure {
+        case "Normal": return "checkmark.circle.fill"
+        case "Warning": return "exclamationmark.circle.fill"
+        case "Critical": return "xmark.circle.fill"
+        default: return "questionmark.circle.fill"
+        }
+    }
+
+    private var iconColor: Color {
+        switch pressure {
+        case "Normal": return .green
+        case "Warning": return .orange
+        case "Critical": return .red
+        default: return .gray
         }
     }
 }
@@ -662,16 +718,22 @@ struct MetricsView: View {
             Text("System")
                 .font(.subheadline)
                 .bold()
-            MetricRow(label: "Used", value: String(format: "%.1f GB", metrics.usedMemoryGB))
-            MetricRow(label: "Free", value: String(format: "%.1f GB", metrics.freeMemoryGB))
-            MetricRow(label: "Swap", value: String(format: "%.0f / %.0f MB", metrics.swapUsedMB, metrics.swapTotalMB))
+            MetricRow(label: "Used", value: String(format: "%.1f GB", metrics.usedMemoryGB),
+                      accessibilityHint: "Memory currently in use")
+            MetricRow(label: "Free", value: String(format: "%.1f GB", metrics.freeMemoryGB),
+                      accessibilityHint: "Available memory")
+            MetricRow(label: "Swap", value: String(format: "%.0f / %.0f MB", metrics.swapUsedMB, metrics.swapTotalMB),
+                      accessibilityHint: "Swap memory used out of total")
         }
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel("System memory metrics")
     }
 }
 
 struct MetricRow: View {
     let label: String
     let value: String
+    let accessibilityHint: String
 
     var body: some View {
         HStack {
@@ -682,6 +744,9 @@ struct MetricRow: View {
             Text(value)
                 .font(.caption)
         }
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel("\(label): \(value)")
+        .accessibilityHint(accessibilityHint)
     }
 }
 
@@ -695,9 +760,13 @@ struct TopProcessView: View {
                 .bold()
             Text(process.name)
                 .font(.body)
-            MetricRow(label: "Memory", value: String(format: "%.0f MB", process.memoryMB))
-            MetricRow(label: "CPU", value: String(format: "%.1f%%", process.cpuPercent))
+            MetricRow(label: "Memory", value: String(format: "%.0f MB", process.memoryMB),
+                      accessibilityHint: "Memory usage by this process")
+            MetricRow(label: "CPU", value: String(format: "%.1f%%", process.cpuPercent),
+                      accessibilityHint: "CPU usage percentage")
         }
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel("Top process: \(process.name)")
     }
 }
 
@@ -711,10 +780,16 @@ struct LeakSuspectView: View {
                 .bold()
             Text(suspect.name)
                 .font(.body)
-            MetricRow(label: "Growth", value: String(format: "%.0f MB", suspect.growthMB))
-            MetricRow(label: "Rate", value: String(format: "%.1f MB/hr", suspect.growthRate))
-            MetricRow(label: "Level", value: suspect.suspicionLevel.rawValue)
+            MetricRow(label: "Growth", value: String(format: "%.0f MB", suspect.growthMB),
+                      accessibilityHint: "Total memory growth detected")
+            MetricRow(label: "Rate", value: String(format: "%.1f MB/hr", suspect.growthRate),
+                      accessibilityHint: "Rate of memory growth per hour")
+            MetricRow(label: "Level", value: suspect.suspicionLevel.rawValue,
+                      accessibilityHint: "Leak severity level")
         }
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel("Memory leak suspect: \(suspect.name)")
+        .accessibilityValue("Level: \(suspect.suspicionLevel.rawValue)")
     }
 }
 
@@ -768,16 +843,31 @@ struct MenuBarActionsView: View {
                 .bold()
             Link("Open Reports", destination: reportsURL)
                 .font(.caption)
+                .accessibilityLabel("Open reports folder")
+                .accessibilityHint("Shows memory analysis reports")
             Link("Open Samples", destination: samplesURL)
                 .font(.caption)
+                .accessibilityLabel("Open samples folder")
+                .accessibilityHint("Shows diagnostic sample files")
             Link("Open Logs", destination: logsURL)
                 .font(.caption)
+                .accessibilityLabel("Open logs folder")
+                .accessibilityHint("Shows application logs")
             Button("View Status") { viewStatus() }
                 .font(.caption)
+                .accessibilityLabel("View status")
+                .accessibilityHint("Opens Terminal to show detailed status")
+                .keyboardShortcut("s", modifiers: .command)
             Button("Run Diagnostics") { runDiagnostics() }
                 .font(.caption)
+                .accessibilityLabel("Run diagnostics")
+                .accessibilityHint("Executes diagnostic procedures for the suspected process")
+                .keyboardShortcut("d", modifiers: .command)
             Button("Notification Preferences…") { openPreferences() }
                 .font(.caption)
+                .accessibilityLabel("Notification preferences")
+                .accessibilityHint("Configure notification settings and quiet hours")
+                .keyboardShortcut(",", modifiers: .command)
         }
     }
 }
@@ -889,6 +979,7 @@ struct OverviewSection: View {
                 SystemAlertsView(alerts: snapshot.systemAlerts)
             }
         }
+        .dynamicTypeSize(.xSmall ... .xxxLarge)
     }
 }
 
