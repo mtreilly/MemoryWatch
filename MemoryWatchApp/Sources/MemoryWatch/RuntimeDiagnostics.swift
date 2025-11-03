@@ -14,7 +14,7 @@ public struct DiagnosticSuggestion: Codable, Equatable {
     }
 }
 
-enum RuntimeKind: String {
+public enum RuntimeKind: String {
     case chrome
     case electron
     case node
