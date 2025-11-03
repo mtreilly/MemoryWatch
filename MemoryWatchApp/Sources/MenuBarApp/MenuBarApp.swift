@@ -482,6 +482,7 @@ struct MenuBarContentView: View {
 #endif
             case .diagnostics:
                 DiagnosticsSection(snapshot: snapshot,
+                                   historyPoints: state.historyPoints,
                                    runDiagnostics: { launchDiagnostics() },
                                    reportsURL: reportsURL,
                                    samplesURL: samplesURL,
@@ -835,6 +836,8 @@ struct MenuBarActionsView: View {
     let runDiagnostics: () -> Void
     let viewStatus: () -> Void
     let openPreferences: () -> Void
+    let snapshot: MenuBarState.Snapshot?
+    let historyPoints: [SnapshotHistoryPoint]
 
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
@@ -853,6 +856,19 @@ struct MenuBarActionsView: View {
                 .font(.caption)
                 .accessibilityLabel("Open logs folder")
                 .accessibilityHint("Shows application logs")
+
+            Button("Export Snapshot (JSON)") { exportSnapshot() }
+                .font(.caption)
+                .accessibilityLabel("Export snapshot")
+                .accessibilityHint("Save current memory state to JSON file")
+                .keyboardShortcut("j", modifiers: [.command, .shift])
+
+            Button("Export History (CSV)") { exportHistory() }
+                .font(.caption)
+                .accessibilityLabel("Export history")
+                .accessibilityHint("Save memory history to CSV file for analysis")
+                .keyboardShortcut("e", modifiers: [.command, .shift])
+
             Button("View Status") { viewStatus() }
                 .font(.caption)
                 .accessibilityLabel("View status")
@@ -869,6 +885,31 @@ struct MenuBarActionsView: View {
                 .accessibilityHint("Configure notification settings and quiet hours")
                 .keyboardShortcut(",", modifiers: .command)
         }
+    }
+
+    private func exportSnapshot() {
+        guard let snapshot else { return }
+        guard let jsonData = SnapshotExporter.exportSnapshotAsJSON(snapshot) else { return }
+
+        let dateFormatter = ISO8601DateFormatter()
+        let timestamp = dateFormatter.string(from: snapshot.timestamp)
+            .replacingOccurrences(of: ":", with: "-")
+            .replacingOccurrences(of: "T", with: "_")
+        let filename = "MemoryWatch_Snapshot_\(timestamp).json"
+
+        _ = SnapshotExporter.saveAndReveal(data: jsonData, filename: filename)
+    }
+
+    private func exportHistory() {
+        guard let csvData = SnapshotExporter.exportHistoryAsCSV(historyPoints) else { return }
+
+        let dateFormatter = ISO8601DateFormatter()
+        let timestamp = dateFormatter.string(from: Date())
+            .replacingOccurrences(of: ":", with: "-")
+            .replacingOccurrences(of: "T", with: "_")
+        let filename = "MemoryWatch_History_\(timestamp).csv"
+
+        _ = SnapshotExporter.saveAndReveal(data: csvData, filename: filename)
     }
 }
 
@@ -985,6 +1026,7 @@ struct OverviewSection: View {
 
 struct DiagnosticsSection: View {
     let snapshot: MenuBarState.Snapshot
+    let historyPoints: [SnapshotHistoryPoint]
     let runDiagnostics: () -> Void
     let reportsURL: URL
     let samplesURL: URL
@@ -1008,7 +1050,9 @@ struct DiagnosticsSection: View {
                 logsURL: logsURL,
                 runDiagnostics: runDiagnostics,
                 viewStatus: { DiagnosticsLauncher.viewStatus() },
-                openPreferences: openPreferences
+                openPreferences: openPreferences,
+                snapshot: snapshot,
+                historyPoints: historyPoints
             )
         }
     }
