@@ -58,6 +58,8 @@ enum CLI {
             print("       memwatch dangling-files    Find deleted but open files")
             print("       memwatch report            Show leak detection report")
             print("       memwatch suspects          List leak suspects")
+            print("       memwatch status            View datastore health & retention")
+            print("       memwatch diagnostics PID  Collect runtime diagnostics for PID")
         }
     }
 
@@ -74,7 +76,11 @@ enum CLI {
         print("Press Ctrl+C to stop")
         print("")
 
-        let monitor = ProcessMonitor()
+        try? MemoryWatchPaths.ensureDirectoriesExist()
+        MemoryWatchPaths.migrateLegacyFiles()
+
+        let store = try? SQLiteStore(url: MemoryWatchPaths.databaseFile)
+        let monitor = ProcessMonitor(store: store)
         let stateFile = MemoryWatchPaths.stateFile
 
         // Store globally for signal handler
@@ -102,18 +108,20 @@ enum CLI {
 
         while true {
             iteration += 1
-            let timestamp = formatTimestamp(Date())
+            let sampleDate = Date()
 
             // Collect metrics
             let metrics = SystemMetrics.current()
-            let processes = ProcessCollector.getAllProcesses(minMemoryMB: minMemMB)
+            let processes = ProcessCollector.getAllProcessesWithCPU(minMemoryMB: minMemMB)
 
             // Record snapshot
-            monitor.recordSnapshot(processes: processes)
+            monitor.recordSnapshot(processes: processes, metrics: metrics, timestamp: sampleDate)
 
             // Display status
             let suspects = monitor.getLeakSuspects(minLevel: .medium)
             let alerts = monitor.getRecentAlerts(count: 5)
+
+            let timestamp = formatTimestamp(sampleDate)
 
             print("[\(timestamp)] Scan #\(iteration)")
             print("  Memory: \(String(format: "%.1f", metrics.usedMemoryGB))/\(String(format: "%.1f", metrics.totalMemoryGB))GB  Swap: \(String(format: "%.0f", metrics.swapUsedMB))MB  Pressure: \(metrics.pressure)")
@@ -263,6 +271,79 @@ enum CLI {
         } catch {
             print("❌ No monitoring data found. Run 'memwatch --daemon' first.")
             print("   Error: \(error.localizedDescription)")
+        }
+    }
+
+    static func showStatus() {
+        print("MemoryWatch Status")
+        print("===================================")
+
+        let metrics = SystemMetrics.current()
+
+        print("System Memory:")
+        print("  Total:    \(String(format: "%6.1f", metrics.totalMemoryGB)) GB")
+        print("  Used:     \(String(format: "%6.1f", metrics.usedMemoryGB)) GB")
+        print("  Free:     \(String(format: "%6.1f", metrics.freeMemoryGB)) GB (\(String(format: "%6.1f", metrics.freePercent))%)")
+        print("  Swap:     \(String(format: "%6.0f", metrics.swapUsedMB)) / \(String(format: "%6.0f", metrics.swapTotalMB)) MB")
+        print("  Pressure: \(pressureIcon(metrics.pressure)) \(metrics.pressure)")
+        print("")
+
+        let preferences = NotificationPreferencesStore.loadSync()
+        print("Notifications:")
+        if let desc = preferences.quietHoursDescription() {
+            let policy = preferences.allowInterruptionsDuringQuietHours ? "deliver during quiet hours" : "hold during quiet hours"
+            print("  Quiet hours: \(desc) (\(policy))")
+        } else {
+            print("  Quiet hours: disabled")
+        }
+        print("  Leak alerts: \(preferences.leakNotificationsEnabled ? "enabled" : "disabled")")
+        print("  Pressure alerts: \(preferences.pressureNotificationsEnabled ? "enabled" : "disabled")")
+        print("")
+
+        let dbURL = MemoryWatchPaths.databaseFile
+        let fileManager = FileManager.default
+
+        guard fileManager.fileExists(atPath: dbURL.path) else {
+            print("Datastore:")
+            print("  Path: \(dbURL.path)")
+            print("  Status: Initialising (no samples recorded yet)")
+            return
+        }
+
+        do {
+            let store = try SQLiteStore(url: dbURL)
+            let health = store.healthSnapshot()
+
+            print("Datastore:")
+            print("  Path:           \(dbURL.path)")
+            print("  Schema:         v\(health.schemaVersion) (user_version=\(health.userVersion))")
+            print("  Snapshots:      \(health.snapshotCount)")
+            print("  Process samples:\(health.processSampleCount)")
+            print("  Alerts:         \(health.alertCount)")
+            if let oldest = health.oldestSnapshot {
+                print("  Oldest sample:  \(formatDateTime(oldest))")
+            }
+            if let newest = health.newestSnapshot {
+                print("  Latest sample:  \(formatDateTime(newest))")
+            }
+            let retentionDays = health.retentionWindowHours / 24.0
+            print("  Retention:      \(String(format: "%.0f", health.retentionWindowHours)) hours (~\(String(format: "%.1f", retentionDays)) days)")
+
+            print("  Size:           \(formatBytes(health.databaseSizeBytes)) (WAL: \(formatBytes(health.walSizeBytes)))")
+            print("  Pages:          \(health.pageCount) total / \(health.freePageCount) free")
+
+            if let maintenance = health.lastMaintenance {
+                print("  Last cleanup:   \(formatDateTime(maintenance))")
+            } else {
+                print("  Last cleanup:   Pending (not yet run)")
+            }
+
+            print("  Integrity:      \(health.quickCheckPassed ? "OK" : "Check failed - run VACUUM")")
+
+        } catch {
+            print("Datastore:")
+            print("  Path: \(dbURL.path)")
+            print("  Status: Unable to open (\(error.localizedDescription))")
         }
     }
 
@@ -928,6 +1009,27 @@ enum CLI {
     }
 
     // MARK: - Helper Functions
+
+    static func formatBytes(_ bytes: UInt64) -> String {
+        let units: [String] = ["B", "KB", "MB", "GB", "TB"]
+        var value = Double(bytes)
+        var unitIndex = 0
+        while value >= 1024.0 && unitIndex < units.count - 1 {
+            value /= 1024.0
+            unitIndex += 1
+        }
+        if unitIndex == 0 {
+            return String(format: "%.0f %@", value, units[unitIndex])
+        } else {
+            return String(format: "%.1f %@", value, units[unitIndex])
+        }
+    }
+
+    static func formatDateTime(_ date: Date) -> String {
+        let formatter = DateFormatter()
+        formatter.dateFormat = "yyyy-MM-dd HH:mm:ss"
+        return formatter.string(from: date)
+    }
 
     static func pressureIcon(_ pressure: String) -> String {
         switch pressure {

@@ -1,0 +1,14 @@
+# MemoryWatch Agent Notes
+- Primary runtime is the Swift `memwatch` CLI/daemon; prefer it over the legacy shell script to keep memory collection efficient.
+- Persistent data lives in `~/MemoryWatch/data/memorywatch.sqlite` with WAL + prepared statements—consult `SQLiteStore.swift` before adding new tables.
+- Leak detection now relies on regression-based heuristics (see `LeakHeuristics.swift`); keep tests in `MemoryWatchApp/Tests` green when tuning thresholds.
+- Reporting tooling has moved to the SQLite backend; `analyze.py` can still read legacy CSV files for backwards compatibility.
+- `memwatch status` surfaces datastore health (snapshot counts, retention window, WAL size) via the SQLite store—run it for sanity checks after long daemon sessions.
+- Runtime-specific diagnostic hints are generated in `RuntimeDiagnostics.swift`; extend mappings when supporting new runtimes (Python/Java/Ruby/Go/etc.) and keep commands actionable.
+- `MenuBarState.swift` exposes an observable snapshot (metrics, suspects, hints) for the future menu bar extra—reuse it instead of re-querying the system from UI code.
+- The SwiftUI menu bar companion builds from target `MemoryWatchMenuBar`; it consumes `MenuBarState` and only reads from the SQLite store—keep its UI responsive by using the state container rather than direct system calls.
+- Quiet hours and notification preferences live in `NotificationPreferences.swift`; use `memwatch notifications --show` to inspect/update settings and remember that menu bar alerts honor these preferences and persist delivery history across restarts.
+- System pressure, swap, and WAL-size alerts are persisted via `ProcessMonitor` and rendered in the menu bar overview alongside swap/SSD history—ensure new alert types round-trip through analyzer/reporting and analyzer summaries now include the preference snapshot.
+-- Use `memwatch diagnostics <PID>` (also triggered from the menu bar or leak notifications) to execute runtime-specific collectors; outputs land in `~/MemoryWatch/samples` and alerts retain metadata/links.
+- Roadmap and outstanding tasks are tracked in `docs/MASTER_PLAN.md`; update both files when advancing the plan.
+- Commit regularly with clear summaries, and run `swift test` plus `./analyze.py` prior to opening a PR.

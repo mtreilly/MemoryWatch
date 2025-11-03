@@ -2,39 +2,40 @@ import Foundation
 
 // MARK: - Directory Configuration
 
-struct MemoryWatchPaths {
-    static let baseDir = FileManager.default.homeDirectoryForCurrentUser
+public struct MemoryWatchPaths {
+    public static let baseDir = FileManager.default.homeDirectoryForCurrentUser
         .appendingPathComponent("MemoryWatch")
 
     // Data directories
-    static let dataDir = baseDir.appendingPathComponent("data")
-    static let snapshotsDir = dataDir.appendingPathComponent("snapshots")
-    static let stateDir = dataDir.appendingPathComponent("state")
-    static let samplesDir = dataDir.appendingPathComponent("samples")
+    public static let dataDir = baseDir.appendingPathComponent("data")
+    public static let snapshotsDir = dataDir.appendingPathComponent("snapshots")
+    public static let stateDir = dataDir.appendingPathComponent("state")
+    public static let samplesDir = dataDir.appendingPathComponent("samples")
+    public static let databaseFile = dataDir.appendingPathComponent("memorywatch.sqlite")
 
     // Log directories
-    static let logsDir = baseDir.appendingPathComponent("logs")
-    static let eventsLogsDir = logsDir.appendingPathComponent("events")
-    static let leaksLogsDir = logsDir.appendingPathComponent("leaks")
-    static let daemonLogsDir = logsDir.appendingPathComponent("daemon")
+    public static let logsDir = baseDir.appendingPathComponent("logs")
+    public static let eventsLogsDir = logsDir.appendingPathComponent("events")
+    public static let leaksLogsDir = logsDir.appendingPathComponent("leaks")
+    public static let daemonLogsDir = logsDir.appendingPathComponent("daemon")
 
     // Report directories
-    static let reportsDir = baseDir.appendingPathComponent("reports")
-    static let dailyReportsDir = reportsDir.appendingPathComponent("daily")
-    static let weeklyReportsDir = reportsDir.appendingPathComponent("weekly")
-    static let onDemandReportsDir = reportsDir.appendingPathComponent("on-demand")
+    public static let reportsDir = baseDir.appendingPathComponent("reports")
+    public static let dailyReportsDir = reportsDir.appendingPathComponent("daily")
+    public static let weeklyReportsDir = reportsDir.appendingPathComponent("weekly")
+    public static let onDemandReportsDir = reportsDir.appendingPathComponent("on-demand")
 
     // Legacy paths (for migration)
-    static let legacyStateFile = baseDir.appendingPathComponent("memwatch_state.json")
+    public static let legacyStateFile = baseDir.appendingPathComponent("memwatch_state.json")
 
     // Current file paths
-    static let stateFile = stateDir.appendingPathComponent("memwatch_state.json")
-    static let memoryLogFile = snapshotsDir.appendingPathComponent("memory_log.csv")
-    static let swapHistoryFile = snapshotsDir.appendingPathComponent("swap_history.csv")
-    static let eventsLogFile = eventsLogsDir.appendingPathComponent("events.log")
-    static let leaksLogFile = leaksLogsDir.appendingPathComponent("memory_leaks.log")
+    public static let stateFile = stateDir.appendingPathComponent("memwatch_state.json")
+    public static let memoryLogFile = snapshotsDir.appendingPathComponent("memory_log.csv")
+    public static let swapHistoryFile = snapshotsDir.appendingPathComponent("swap_history.csv")
+    public static let eventsLogFile = eventsLogsDir.appendingPathComponent("events.log")
+    public static let leaksLogFile = leaksLogsDir.appendingPathComponent("memory_leaks.log")
 
-    static func ensureDirectoriesExist() throws {
+    public static func ensureDirectoriesExist() throws {
         let dirs = [
             dataDir, snapshotsDir, stateDir, samplesDir,
             logsDir, eventsLogsDir, leaksLogsDir, daemonLogsDir,
@@ -46,7 +47,7 @@ struct MemoryWatchPaths {
         }
     }
 
-    static func migrateLegacyFiles() {
+    public static func migrateLegacyFiles() {
         // Migrate old state file if it exists
         if FileManager.default.fileExists(atPath: legacyStateFile.path) {
             try? FileManager.default.moveItem(at: legacyStateFile, to: stateFile)
@@ -54,17 +55,17 @@ struct MemoryWatchPaths {
     }
 }
 
-struct SystemMetrics {
-    let totalMemoryGB: Double
-    let usedMemoryGB: Double
-    let freeMemoryGB: Double
-    let freePercent: Double
-    let swapUsedMB: Double
-    let swapTotalMB: Double
-    let swapFreePercent: Double
-    let pressure: String
+public struct SystemMetrics {
+    public let totalMemoryGB: Double
+    public let usedMemoryGB: Double
+    public let freeMemoryGB: Double
+    public let freePercent: Double
+    public let swapUsedMB: Double
+    public let swapTotalMB: Double
+    public let swapFreePercent: Double
+    public let pressure: String
 
-    static func current() -> SystemMetrics {
+    public static func current() -> SystemMetrics {
         let memory = getSystemMemory()
         let swap = getSwapUsage()
         let pressure = determinePressure(freePercent: (memory.free / memory.total) * 100)
@@ -133,7 +134,7 @@ struct SystemMetrics {
         }
     }
 
-    static func getVMActivity() -> (pageins: UInt64, pageouts: UInt64) {
+    public static func getVMActivity() -> (pageins: UInt64, pageouts: UInt64) {
         var stats = vm_statistics64()
         var count = mach_msg_type_number_t(MemoryLayout<vm_statistics64>.size / MemoryLayout<integer_t>.size)
         let result = withUnsafeMutablePointer(to: &stats) {
@@ -148,17 +149,18 @@ struct SystemMetrics {
     }
 }
 
-struct ProcessInfo {
-    let pid: Int32
-    let name: String
-    let memoryMB: Double
-    let percentMemory: Double
-    let cpuPercent: Double
-    let ioReadBps: Double
-    let ioWriteBps: Double
-    let ports: [Int32]
+public struct ProcessInfo: Sendable {
+    public let pid: Int32
+    public let name: String
+    public let executablePath: String?
+    public let memoryMB: Double
+    public let percentMemory: Double
+    public let cpuPercent: Double
+    public let ioReadBps: Double
+    public let ioWriteBps: Double
+    public let ports: [Int32]
 
-    var description: String {
+    public var description: String {
         let pidStr = String(format: "%5d", pid)
         let memStr = String(format: "%7.1f MB", memoryMB)
         let cpuStr = String(format: "%5.1f%%", cpuPercent)
@@ -227,6 +229,7 @@ struct PortCollector {
                 processes.append(ProcessInfo(
                     pid: info.pid,
                     name: info.name,
+                    executablePath: info.executablePath,
                     memoryMB: info.memoryMB,
                     percentMemory: info.percentMemory,
                     cpuPercent: info.cpuPercent,
@@ -242,7 +245,7 @@ struct PortCollector {
     }
 }
 
-struct ProcessCollector {
+public struct ProcessCollector {
     private struct CPUSample { let totalTimeNs: UInt64; let ts: TimeInterval }
     private struct IOSample { let readBytes: UInt64; let writeBytes: UInt64; let ts: TimeInterval }
     nonisolated(unsafe) private static var cpuSamples: [Int32: CPUSample] = [:]
@@ -254,7 +257,7 @@ struct ProcessCollector {
         return Int(n > 0 ? n : 1)
     }()
 
-    static func getAllProcesses(minMemoryMB: Double = 10) -> [(pid: Int32, name: String, memoryMB: Double, percentMemory: Double)] {
+    public static func getAllProcesses(minMemoryMB: Double = 10) -> [(pid: Int32, name: String, memoryMB: Double, percentMemory: Double)] {
         var processes: [(Int32, String, Double, Double)] = []
         var pids = [pid_t](repeating: 0, count: 2048)
 
@@ -310,15 +313,17 @@ struct ProcessCollector {
         return processes
     }
 
-    static func getProcessInfo(pid: Int32) -> (pid: Int32, name: String, memoryMB: Double, percentMemory: Double, cpuPercent: Double, ioReadBps: Double, ioWriteBps: Double)? {
+    public static func getProcessInfo(pid: Int32) -> ProcessInfo? {
         // Get process name
         var pathBuf = [CChar](repeating: 0, count: 4096)
         let pathLen = proc_pidpath(pid, &pathBuf, UInt32(pathBuf.count))
 
         var name: String
+        var pathString: String?
         if pathLen > 0 {
             let pathData = Data(bytes: pathBuf, count: pathBuf.firstIndex(of: 0) ?? pathBuf.count)
             let path = String(decoding: pathData, as: UTF8.self)
+            pathString = path
             name = path.components(separatedBy: "/").last ?? ""
         } else {
             var procName = proc_bsdshortinfo()
@@ -383,10 +388,20 @@ struct ProcessCollector {
             ioSamples[pid] = IOSample(readBytes: readBytes, writeBytes: writeBytes, ts: now)
         }
 
-        return (pid, name, memoryMB, percentMemory, cpuPercent, ioReadBps, ioWriteBps)
+        return ProcessInfo(
+            pid: pid,
+            name: name,
+            executablePath: pathString,
+            memoryMB: memoryMB,
+            percentMemory: percentMemory,
+            cpuPercent: cpuPercent,
+            ioReadBps: ioReadBps,
+            ioWriteBps: ioWriteBps,
+            ports: []
+        )
     }
 
-    static func getAllProcessesWithCPU(minMemoryMB: Double = 10) -> [ProcessInfo] {
+    public static func getAllProcessesWithCPU(minMemoryMB: Double = 10) -> [ProcessInfo] {
         var processes: [ProcessInfo] = []
         var pids = [pid_t](repeating: 0, count: 2048)
 
@@ -400,16 +415,7 @@ struct ProcessCollector {
             guard pid > 0 else { continue }
 
             if let info = getProcessInfo(pid: pid), info.memoryMB >= minMemoryMB {
-                processes.append(ProcessInfo(
-                    pid: info.pid,
-                    name: info.name,
-                    memoryMB: info.memoryMB,
-                    percentMemory: info.percentMemory,
-                    cpuPercent: info.cpuPercent,
-                    ioReadBps: info.ioReadBps,
-                    ioWriteBps: info.ioWriteBps,
-                    ports: []
-                ))
+                processes.append(info)
             }
         }
 
