@@ -11,9 +11,9 @@
 - Added `memwatch diagnostics <PID>` to automatically capture artifacts for the mapped runtimes and store metadata alongside alerts.
 
 ## Next Milestones
-1. **Hardening & Telemetry (Phase 2)** – remaining: automated vacuum scheduling and retention-trim alerts; WAL size budgeting + alerting now fire when the WAL exceeds thresholds.
-2. **Toolchain Integrations** – expand runtime diagnostic adapters (Chromium heap dumps, Xcode malloc stack logging, Node heap snapshots) and capture their artefacts alongside alerts.
-3. **UI & Menu Bar (Phase 1+)** – polish the macOS menu bar extra with richer history interactions (sparklines, drill-down navigation) and advanced alerting flows.
+1. **UI & Menu Bar Phase 4 Completion** – complete export functionality (JSON/CSV snapshots), add update cadence and retention window preferences.
+2. **Hardening & Telemetry (Phase 2)** – automated vacuum scheduling, retention-trim alerts, WAL size budgeting + alerting when WAL exceeds thresholds.
+3. **Toolchain Integrations** – expand runtime diagnostic adapters (Chromium heap dumps, Xcode malloc stack logging, Node heap snapshots) and capture their artefacts alongside alerts.
 4. **Orphan/Residue Detection** – extend filesystem sweeps for deleted-but-open files, stale swapfiles, and orphaned processes; map offenders back to bundles for remediation workflows.
 5. **Documentation & Developer Experience** – expand CLI docs, add API references for the datastore, and publish guidance on enabling required system entitlements.
 
@@ -23,9 +23,12 @@
 - **Phase 2 – Historical panes** ✅: the menu bar streams recent snapshots via a history provider, renders memory/swap sparklines, overlays SSD-wear estimates, and supports drill-down into point diagnostics.
 - **Phase 3 – Alerting hooks** ✅: configurable quiet hours, persistence for delivered alerts across restarts, and WAL/swap/pressure warnings are surfaced through both notifications and the menu UI.
 - **Phase 4 – Polish** (IN PROGRESS): add preferences (update cadence, retention window overrides), accessibility audits (Dynamic Type, VoiceOver labels), and export options for quick sharing of current status.
-  - Status: App successfully built and installed to `/Applications/MemoryWatch.app`
-  - Menu bar icon verified: uses `memorychip` system image
-  - Next: Implement notification preferences sheet refinements, keyboard navigation, and VoiceOver accessibility labels
+  - ✅ Built and installed to `/Applications/MemoryWatch.app`
+  - ✅ Menu bar icon verified (memorychip system image)
+  - ✅ **Accessibility** (COMPLETE): Full VoiceOver support, semantic labels, accessibility hints for all UI components
+  - ✅ **Keyboard Navigation** (COMPLETE): Cmd+S, Cmd+D, Cmd+,, Tab navigation, Escape to close, Return to confirm
+  - ✅ **Dynamic Type** (COMPLETE): Support for all text scales (.xSmall to .xxxLarge), responsive layout
+  - 🔄 **Remaining Phase 4**: Export snapshot data (JSON/CSV), preference refinements (update cadence, retention window)
 
 ## Operational Guidelines
 - Keep the monitoring loop lightweight: favour cached statements, avoid repeated tool launches, and batch I/O where possible.
