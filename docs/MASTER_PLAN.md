@@ -60,7 +60,8 @@
   - ✅ **Keyboard Navigation** (COMPLETE): Cmd+S, Cmd+D, Cmd+,, Tab navigation, Escape to close, Return to confirm
   - ✅ **Dynamic Type** (COMPLETE): Support for all text scales (.xSmall to .xxxLarge), responsive layout
   - ✅ **Export Functionality** (COMPLETE): JSON export for current snapshot, CSV export for historical data
-  - ✅ **Preference Refinements** (COMPLETE): Update cadence (5-300s) and retention window (1-720h) with UI sliders
+  - ✅ **Preference Refinements** (COMPLETE): Update cadence (5-300s) and retention window (1-720h) with UI sliders wired into menu bar refresh + daemon retention
+  - ✅ **Daemon Controls** (COMPLETE): Menu bar auto-starts the daemon, adds start/stop controls, provides a launch-at-login toggle backed by launchctl bootstrap/bootout, and falls back to a bundled CLI when PATH lookup fails
 
 ## Operational Guidelines
 - Keep the monitoring loop lightweight: favour cached statements, avoid repeated tool launches, and batch I/O where possible.

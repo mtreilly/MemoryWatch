@@ -89,7 +89,7 @@ class RetentionManagerTests: XCTestCase {
         XCTAssertNil(status.newestSnapshot)
     }
 
-    func testRetentionChangeAlert() async {
+    func testRetentionChangeAlert() {
         let customPrefs = NotificationPreferences(
             quietHours: NotificationPreferences.default.quietHours,
             leakNotificationsEnabled: true,
@@ -108,17 +108,14 @@ class RetentionManagerTests: XCTestCase {
         )
 
         // First check - should trigger a change alert since we're changing from default
-        await manager.checkAndTrimIfNeeded()
-
-        // Give it a moment
-        try? await Task.sleep(for: .milliseconds(100))
+        manager.checkAndTrimIfNeeded()
 
         // Manager should have updated its retention window
         let status = manager.getStatus()
         XCTAssertLessThan(status.retentionWindowHours, 72)
     }
 
-    func testForceTrimNow() async {
+    func testForceTrimNow() {
         let now = Date()
         let oneDayAgo = now.addingTimeInterval(-86400)
 
@@ -149,7 +146,7 @@ class RetentionManagerTests: XCTestCase {
         )
 
         // Force trim should clean up old data
-        await manager.forceTrimNow()
+        manager.forceTrimNow()
 
         health = store.healthSnapshot()
         // Should still have at least 1 snapshot since nothing is older than retention window yet

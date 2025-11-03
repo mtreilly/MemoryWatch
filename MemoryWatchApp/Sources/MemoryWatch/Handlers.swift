@@ -66,7 +66,7 @@ enum CLI {
     nonisolated(unsafe) static var globalMonitor: ProcessMonitor?
     nonisolated(unsafe) static var globalStateFile: URL?
 
-    static func runDaemon(interval: TimeInterval = 30,
+    static func runDaemon(intervalOverride: TimeInterval? = nil,
                           minMemMB: Double = 50,
                           swapWarnMB: Double = 1024,
                           pageoutsWarnRate: Double = 100,
@@ -75,9 +75,19 @@ enum CLI {
         print("🔍 MemoryWatch Daemon Starting...")
         print("Press Ctrl+C to stop")
         print("")
-
         try? MemoryWatchPaths.ensureDirectoriesExist()
         MemoryWatchPaths.migrateLegacyFiles()
+
+        let initialPreferences = NotificationPreferencesStore.loadSync()
+        var scanInterval = intervalOverride ?? initialPreferences.updateCadenceSeconds
+        scanInterval = max(5, min(300, scanInterval))
+        var lastPreferencesReload = Date()
+        var lastRetentionInvocation = Date.distantPast
+        let preferencesReloadInterval: TimeInterval = 120
+
+        let cadenceSource = intervalOverride != nil ? "override" : "preferences"
+        print("Scan cadence: \(String(format: "%.0f", scanInterval))s (\(cadenceSource))")
+        print("")
 
         let store = try? SQLiteStore(url: MemoryWatchPaths.databaseFile)
         let monitor = ProcessMonitor(store: store)
@@ -89,6 +99,18 @@ enum CLI {
 
         // Try to load previous state
         try? monitor.loadState(from: stateFile)
+
+        var maintenanceScheduler: MaintenanceScheduler?
+        var retentionManager: RetentionManager?
+        if let store {
+            let alertHandler: @Sendable (MemoryAlert) -> Void = { alert in
+                CLI.globalMonitor?.recordAlert(alert)
+            }
+            maintenanceScheduler = MaintenanceScheduler(store: store, alertHandler: alertHandler)
+            retentionManager = RetentionManager(store: store,
+                                                alertHandler: alertHandler,
+                                                preferencesLoader: { NotificationPreferencesStore.loadSync() })
+        }
 
         var iteration = 0
 
@@ -110,12 +132,33 @@ enum CLI {
             iteration += 1
             let sampleDate = Date()
 
+            if intervalOverride == nil {
+                if Date().timeIntervalSince(lastPreferencesReload) >= preferencesReloadInterval {
+                    let latestPreferences = NotificationPreferencesStore.loadSync()
+                    let newInterval = max(5, min(300, latestPreferences.updateCadenceSeconds))
+                    if abs(newInterval - scanInterval) > 0.1 {
+                        print("[\(formatTimestamp(sampleDate))] ⏱ Adjusting scan cadence to \(Int(newInterval))s based on preferences")
+                    }
+                    scanInterval = newInterval
+                    lastPreferencesReload = Date()
+                }
+            }
+
             // Collect metrics
             let metrics = SystemMetrics.current()
             let processes = ProcessCollector.getAllProcessesWithCPU(minMemoryMB: minMemMB)
 
             // Record snapshot
             monitor.recordSnapshot(processes: processes, metrics: metrics, timestamp: sampleDate)
+
+            maintenanceScheduler?.checkAndMaintainIfNeeded()
+            if let retentionManager {
+                let now = Date()
+                if now.timeIntervalSince(lastRetentionInvocation) >= 60 {
+                    lastRetentionInvocation = now
+                    retentionManager.checkAndTrimIfNeeded()
+                }
+            }
 
             // Display status
             let suspects = monitor.getLeakSuspects(minLevel: .medium)
@@ -166,8 +209,8 @@ enum CLI {
                 print("\n" + monitor.generateReport())
             }
 
-            let sleepSec = interval > 0 ? UInt32(interval) : 1
-            sleep(sleepSec)
+            let sleepInterval = max(scanInterval, 1)
+            Thread.sleep(forTimeInterval: sleepInterval)
         }
     }
 

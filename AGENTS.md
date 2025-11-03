@@ -7,7 +7,11 @@
   - Memory history charts with point drill-down
   - Configurable notifications with quiet hours
   - System alerts (memory pressure, swap, WAL thresholds)
-- 🔄 **Phase 4 – Polish (IN PROGRESS)**: Improving accessibility (keyboard nav, VoiceOver), adding preference UI refinements, export functionality
+- ✅ **Phase 4 – Polish (COMPLETE)**: Accessibility (keyboard nav, VoiceOver), preference refinements, export tooling, and preference-driven scan cadence
+  - Menu bar refresh cadence now respects `NotificationPreferences.updateCadenceSeconds`
+  - `memwatch daemon` defaults to preference cadence (overridable via `--interval`)
+  - Maintenance scheduler + retention manager run continuously with alerts flowing through `ProcessMonitor`
+  - Menu bar auto-starts/stops the daemon, exposes a launch-at-login toggle backed by launchctl bootstrap/bootout, and falls back to a bundled CLI if PATH lookup fails
 
 ## Architecture
 

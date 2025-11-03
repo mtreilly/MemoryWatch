@@ -10,9 +10,9 @@ import MemoryWatchCore
 @main
 struct MemoryWatchMenuBarApp: App {
     @StateObject private var state: MenuBarState
+    @StateObject private var daemonController: DaemonController
     private let monitor: ProcessMonitor?
     private let historyProvider: SnapshotHistoryProvider?
-    private let refreshTimer = Timer.publish(every: 30, on: .main, in: .common).autoconnect()
 
     init() {
         try? MemoryWatchPaths.ensureDirectoriesExist()
@@ -26,10 +26,12 @@ struct MemoryWatchMenuBarApp: App {
             _state = StateObject(wrappedValue: MenuBarState(historyLoader: {
                 await provider.loadHistory()
             }))
+            _daemonController = StateObject(wrappedValue: DaemonController())
         } else {
             self.monitor = nil
             self.historyProvider = nil
             _state = StateObject(wrappedValue: MenuBarState())
+            _daemonController = StateObject(wrappedValue: DaemonController())
         }
 
         UNUserNotificationCenter.current().delegate = NotificationDelegate.shared
@@ -40,7 +42,7 @@ struct MemoryWatchMenuBarApp: App {
         MenuBarExtra("MemoryWatch", systemImage: "memorychip") {
             MenuBarContentView(state: state,
                                monitor: monitor,
-                               refreshTimer: refreshTimer)
+                               daemonController: daemonController)
                 .frame(width: 320)
                 .padding(.vertical, 12)
                 .padding(.horizontal, 16)
@@ -469,13 +471,14 @@ enum DiagnosticsLauncher {
 struct MenuBarContentView: View {
     @ObservedObject var state: MenuBarState
     let monitor: ProcessMonitor?
-    let refreshTimer: Publishers.Autoconnect<Timer.TimerPublisher>
+    @ObservedObject var daemonController: DaemonController
     @State private var notificationsAuthorized = false
     @State private var lastNotifiedPid: Int32?
     @State private var selectedTab: Tab = .overview
     @State private var selectedHistoryPoint: SnapshotHistoryPoint?
     @State private var deliveredAlertHistory: [String: Date] = DeliveredAlertHistoryStore.load()
     @State private var showPreferences = false
+    @State private var refreshTimer = Timer.publish(every: 30, on: .main, in: .common).autoconnect()
 
     private var reportsURL: URL { MemoryWatchPaths.reportsDir }
     private var samplesURL: URL { MemoryWatchPaths.samplesDir }
@@ -531,16 +534,23 @@ struct MenuBarContentView: View {
                                    reportsURL: reportsURL,
                                    samplesURL: samplesURL,
                                    logsURL: logsURL,
-                                   openPreferences: { showPreferences = true })
+                                   openPreferences: { showPreferences = true },
+                                   daemonController: daemonController)
             }
         }
         .onAppear {
             state.refresh(processMonitor: monitor)
+            updateRefreshTimer(with: state.snapshot.notificationPreferences.updateCadenceSeconds)
             requestNotificationAuthorization()
+            daemonController.refreshStatus()
         }
         .onReceive(refreshTimer) { _ in
             state.refresh(processMonitor: monitor)
+            daemonController.refreshStatus()
             evaluateNotifications(snapshot: state.snapshot)
+        }
+        .onChange(of: snapshot.notificationPreferences.updateCadenceSeconds) { newValue in
+            updateRefreshTimer(with: newValue)
         }
         .onChange(of: snapshot.topLeakSuspect?.pid) { _ in
             evaluateNotifications(snapshot: state.snapshot)
@@ -566,6 +576,11 @@ struct MenuBarContentView: View {
                 notificationsAuthorized = granted
             }
         }
+    }
+
+    private func updateRefreshTimer(with interval: TimeInterval) {
+        let clamped = max(5, min(300, interval))
+        refreshTimer = Timer.publish(every: clamped, on: .main, in: .common).autoconnect()
     }
 
     private func evaluateNotifications(snapshot: MenuBarState.Snapshot) {
@@ -753,6 +768,7 @@ struct PressureIndicator: View {
         default: return .gray
         }
     }
+
 }
 
 struct MetricsView: View {
@@ -882,6 +898,7 @@ struct MenuBarActionsView: View {
     let openPreferences: () -> Void
     let snapshot: MenuBarState.Snapshot?
     let historyPoints: [SnapshotHistoryPoint]
+    @ObservedObject var daemonController: DaemonController
 
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
@@ -912,6 +929,26 @@ struct MenuBarActionsView: View {
                 .accessibilityLabel("Export history")
                 .accessibilityHint("Save memory history to CSV file for analysis")
                 .keyboardShortcut("e", modifiers: [.command, .shift])
+
+            if daemonController.isRunning {
+                Button("Stop Daemon") { daemonController.stopDaemon() }
+                    .font(.caption)
+                    .accessibilityLabel("Stop daemon")
+                    .accessibilityHint("Stops background memory monitoring")
+            } else {
+                Button("Start Daemon") { daemonController.startDaemon() }
+                    .font(.caption)
+                    .accessibilityLabel("Start daemon")
+                    .accessibilityHint("Launches background memory monitoring")
+            }
+
+            Toggle("Launch at Login", isOn: Binding(
+                get: { daemonController.launchAtLogin },
+                set: { daemonController.setLaunchAtLogin($0) }
+            ))
+            .font(.caption)
+            .toggleStyle(.switch)
+            .accessibilityHint("Automatically launch MemoryWatch at login")
 
             Button("View Status") { viewStatus() }
                 .font(.caption)
@@ -1076,6 +1113,7 @@ struct DiagnosticsSection: View {
     let samplesURL: URL
     let logsURL: URL
     let openPreferences: () -> Void
+    @ObservedObject var daemonController: DaemonController
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
@@ -1096,7 +1134,8 @@ struct DiagnosticsSection: View {
                 viewStatus: { DiagnosticsLauncher.viewStatus() },
                 openPreferences: openPreferences,
                 snapshot: snapshot,
-                historyPoints: historyPoints
+                historyPoints: historyPoints,
+                daemonController: daemonController
             )
         }
     }

@@ -30,7 +30,7 @@ public struct StatusCommand: ParsableCommand {
 
 public struct DaemonCommand: ParsableCommand {
     public static let configuration = CommandConfiguration(abstract: "Run continuous monitoring daemon")
-    @Option(name: .shortAndLong, help: "Scan interval seconds") public var interval: Double = 30
+    @Option(name: .shortAndLong, help: "Scan interval seconds (defaults to preference)") public var interval: Double?
     @Option(name: .customLong("min-mem-mb"), help: "Minimum process memory to track (MB)") public var minMemMB: Double = 50
     @Option(name: .customLong("swap-warn-mb"), help: "Warn when swap used exceeds MB") public var swapWarnMB: Double = 1024
     @Option(name: .customLong("pageouts-warn-rate"), help: "Warn when pageouts/sec exceeds threshold") public var pageoutsWarnRate: Double = 100
@@ -42,7 +42,7 @@ public struct DaemonCommand: ParsableCommand {
     public mutating func run() throws {
         try? MemoryWatchPaths.ensureDirectoriesExist()
         MemoryWatchPaths.migrateLegacyFiles()
-        CLI.runDaemon(interval: interval,
+        CLI.runDaemon(intervalOverride: interval,
                       minMemMB: minMemMB,
                       swapWarnMB: swapWarnMB,
                       pageoutsWarnRate: pageoutsWarnRate,

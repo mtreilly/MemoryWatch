@@ -1,4 +1,4 @@
-.PHONY: build test install snapshot daemon io report suspects
+.PHONY: build test install snapshot daemon io report suspects release-app
 
 build:
 	cd MemoryWatchApp && swift build -c release
@@ -24,3 +24,5 @@ report:
 suspects:
 	MemoryWatchApp/.build/release/MemoryWatch suspects
 
+release-app:
+	./scripts/release_build.sh

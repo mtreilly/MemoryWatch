@@ -134,4 +134,32 @@ final class ProcessMonitorTests: XCTestCase {
         let alert = monitor.getRecentAlerts().first { $0.type == .datastoreWarning }
         XCTAssertNotNil(alert)
     }
+
+    func testRecordExternalAlertDeduplicatesWithinWindow() {
+        let monitor = ProcessMonitor()
+        let now = Date()
+        let alert = MemoryAlert(timestamp: now,
+                                type: .datastoreWarning,
+                                message: "Retention reduced",
+                                pid: nil,
+                                processName: nil,
+                                metadata: nil)
+
+        monitor.recordAlert(alert)
+        XCTAssertEqual(monitor.getRecentAlerts().count, 1)
+
+        // Duplicate within 5-minute window should be ignored
+        monitor.recordAlert(alert)
+        XCTAssertEqual(monitor.getRecentAlerts().count, 1)
+
+        // Alert outside dedupe window should be accepted
+        let later = MemoryAlert(timestamp: now.addingTimeInterval(360),
+                                type: .datastoreWarning,
+                                message: "Retention reduced",
+                                pid: nil,
+                                processName: nil,
+                                metadata: nil)
+        monitor.recordAlert(later)
+        XCTAssertEqual(monitor.getRecentAlerts().count, 2)
+    }
 }

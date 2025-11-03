@@ -123,6 +123,7 @@ public class ProcessMonitor {
     private var processHistory: [Int32: [ProcessSnapshot]] = [:]
     private var leakSuspects: [Int32: LeakSuspect] = [:]
     private var alerts: [MemoryAlert] = []
+    private let alertLock = NSLock()
     private var lastSystemPressureLevel: String = "Normal"
     private var lastSwapAlertTimestamp: Date = .distantPast
 
@@ -297,16 +298,27 @@ public class ProcessMonitor {
             metadata: metadata
         )
 
-        // Avoid duplicate alerts (same type + process within 5 minutes)
-        let recentAlerts = alerts.filter {
-            Date().timeIntervalSince($0.timestamp) < 300 &&
-            $0.type == type &&
-            $0.pid == pid &&
-            $0.message == message
+        recordAlert(alert)
+    }
+
+    public func recordAlert(_ alert: MemoryAlert, deduplicationWindow: TimeInterval = 300) {
+        var shouldPersist = false
+
+        alertLock.lock()
+        let isDuplicate = alerts.contains {
+            $0.type == alert.type &&
+            $0.pid == alert.pid &&
+            $0.message == alert.message &&
+            abs(alert.timestamp.timeIntervalSince($0.timestamp)) < deduplicationWindow
         }
 
-        if recentAlerts.isEmpty {
+        if !isDuplicate {
             alerts.append(alert)
+            shouldPersist = true
+        }
+        alertLock.unlock()
+
+        if shouldPersist {
             store?.insertAlert(alert)
         }
     }
@@ -419,7 +431,10 @@ public class ProcessMonitor {
     }
 
     public func getRecentAlerts(count: Int = 20) -> [MemoryAlert] {
-        return Array(alerts.suffix(count))
+        alertLock.lock()
+        let recent = Array(alerts.suffix(count))
+        alertLock.unlock()
+        return recent
     }
 
     func latestSnapshot(for pid: Int32) -> ProcessSnapshot? {
@@ -429,7 +444,7 @@ public class ProcessMonitor {
     public func getStats() -> (processesTracked: Int, totalSnapshots: Int, alertsCount: Int) {
         let processesTracked = processHistory.count
         let totalSnapshots = processHistory.values.reduce(0) { $0 + $1.count }
-        let alertsCount = alerts.count
+        let alertsCount = alertsCount()
         return (processesTracked, totalSnapshots, alertsCount)
     }
 
@@ -552,7 +567,7 @@ public class ProcessMonitor {
         report += "─────────────────────────────────────────────────────────────\n"
         report += "Processes tracked: \(processHistory.count)\n"
         report += "Total snapshots: \(processHistory.values.reduce(0) { $0 + $1.count })\n"
-        report += "Total alerts: \(alerts.count)\n"
+        report += "Total alerts: \(alertsCount())\n"
 
         report += "\n═══════════════════════════════════════════════════════════════\n"
 
@@ -606,6 +621,13 @@ public class ProcessMonitor {
             }
         }
         return "\(bytes) B"
+    }
+
+    private func alertsCount() -> Int {
+        alertLock.lock()
+        let count = alerts.count
+        alertLock.unlock()
+        return count
     }
 
     // MARK: - Persistence

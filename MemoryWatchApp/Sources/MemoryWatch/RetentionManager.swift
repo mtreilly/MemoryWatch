@@ -5,7 +5,7 @@ import Foundation
 public class RetentionManager {
     private let store: SQLiteStore
     private let alertHandler: @Sendable (MemoryAlert) -> Void
-    private let preferencesLoader: @Sendable () async -> NotificationPreferences
+    private let preferencesLoader: @Sendable () -> NotificationPreferences
 
     // Configuration
     private let minimumRetentionHours: Double = 1          // At least 1 hour
@@ -23,10 +23,10 @@ public class RetentionManager {
     /// - Parameters:
     ///   - store: The SQLite store to manage
     ///   - alertHandler: Closure to handle retention-related alerts
-    ///   - preferencesLoader: Async closure to load current preferences
+    ///   - preferencesLoader: Closure to load current preferences
     public init(store: SQLiteStore,
                 alertHandler: @escaping @Sendable (MemoryAlert) -> Void,
-                preferencesLoader: @escaping @Sendable () async -> NotificationPreferences) {
+                preferencesLoader: @escaping @Sendable () -> NotificationPreferences) {
         self.store = store
         self.alertHandler = alertHandler
         self.preferencesLoader = preferencesLoader
@@ -34,7 +34,7 @@ public class RetentionManager {
     }
 
     /// Check and trim data if retention window has changed or cleanup is due
-    public func checkAndTrimIfNeeded() async {
+    public func checkAndTrimIfNeeded() {
         let now = Date()
 
         guard now.timeIntervalSince(lastTrimCheck) >= trimCheckInterval else {
@@ -44,17 +44,17 @@ public class RetentionManager {
         lastTrimCheck = now
 
         // Load current preferences
-        let preferences = await preferencesLoader()
+        let preferences = preferencesLoader()
         let newRetention = Double(preferences.retentionWindowHours)
 
         // If retention window changed, perform immediate trim
         if abs(newRetention - currentRetentionHours) > 0.1 {
-            await handleRetentionChange(from: currentRetentionHours, to: newRetention, at: now)
+            handleRetentionChange(from: currentRetentionHours, to: newRetention, at: now)
             currentRetentionHours = newRetention
         }
 
         // Perform periodic data cleanup
-        await performCleanup(at: now)
+        performCleanup(at: now)
     }
 
     /// Get current retention status
@@ -75,13 +75,13 @@ public class RetentionManager {
     }
 
     /// Force immediate trim to respect current retention window
-    public func forceTrimNow() async {
-        await performCleanup(at: Date())
+    public func forceTrimNow() {
+        performCleanup(at: Date())
     }
 
     // MARK: - Private
 
-    private func handleRetentionChange(from oldHours: Double, to newHours: Double, at timestamp: Date) async {
+    private func handleRetentionChange(from oldHours: Double, to newHours: Double, at timestamp: Date) {
         let changePercentage = ((newHours - oldHours) / oldHours) * 100
 
         let direction = newHours > oldHours ? "extended" : "reduced"
@@ -102,7 +102,7 @@ public class RetentionManager {
         alertHandler(alert)
     }
 
-    private func performCleanup(at timestamp: Date) async {
+    private func performCleanup(at timestamp: Date) {
         let snapshotCutoff = timestamp.timeIntervalSince1970 - (currentRetentionHours * 3600)
         let alertCutoff = timestamp.timeIntervalSince1970 - (alertRetentionHours * 3600)
 
