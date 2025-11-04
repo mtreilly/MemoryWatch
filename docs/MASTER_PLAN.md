@@ -65,7 +65,7 @@
 
 ## Operational Guidelines
 - Keep the monitoring loop lightweight: favour cached statements, avoid repeated tool launches, and batch I/O where possible.
-- When validating in sandboxed CI environments, remember the daemon may exit early while probing the SQLite WAL; host-level smoke tests are still required before release.
+- When validating in sandboxed CI environments, remember the daemon may exit early while probing the SQLite WAL; host-level smoke tests are still required before release. Use the `MEMWATCH_FORCE_SANDBOX`, `MEMWATCH_DISABLE_MAINTENANCE`, and `MEMWATCH_DISABLE_WAL_INTROSPECTION` switches to mimic those environments locally.
 - Treat alerts as actionable: every high/critical alert should have accompanying diagnostics (sample, leak report, or runtime-specific probe).
 - Commit early and often; tests (`swift test`, `./analyze.py`) should run clean before each commit.
 - Track follow-up tasks in `docs/MASTER_PLAN.md` and mirror high-level updates in `AGENTS.md` so the wider agent network stays in sync.

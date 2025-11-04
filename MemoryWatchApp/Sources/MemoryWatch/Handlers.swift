@@ -100,10 +100,19 @@ enum CLI {
         // Try to load previous state
         try? monitor.loadState(from: stateFile)
 
+        var maintenanceScheduler: MaintenanceScheduler?
         var retentionManager: RetentionManager?
         if let store {
             let alertHandler: @Sendable (MemoryAlert) -> Void = { alert in
                 CLI.globalMonitor?.recordAlert(alert)
+            }
+            if RuntimeContext.maintenanceEnabled {
+                maintenanceScheduler = MaintenanceScheduler(store: store,
+                                                            alertHandler: alertHandler)
+            } else if RuntimeContext.isSandboxed {
+                print("⚠️  Skipping database maintenance (sandboxed environment)")
+            } else {
+                print("ℹ️  Database maintenance disabled via MEMWATCH_DISABLE_MAINTENANCE")
             }
             retentionManager = RetentionManager(store: store,
                                                 alertHandler: alertHandler,
@@ -149,6 +158,7 @@ enum CLI {
             // Record snapshot
             monitor.recordSnapshot(processes: processes, metrics: metrics, timestamp: sampleDate)
 
+            maintenanceScheduler?.checkAndMaintainIfNeeded()
             if let retentionManager {
                 let now = Date()
                 if now.timeIntervalSince(lastRetentionInvocation) >= 60 {

@@ -130,10 +130,12 @@ public class ProcessMonitor {
     private var lastWALAlertTimestamp: Date = .distantPast
     private let walAlertCooldown: TimeInterval = 3600
     private let walAlertThresholdMB: Double
+    private let walMonitoringEnabled: Bool
 
     public init(store: SQLiteStore? = nil, walAlertThresholdMB: Double = 150) {
         self.store = store
         self.walAlertThresholdMB = walAlertThresholdMB
+        self.walMonitoringEnabled = RuntimeContext.walIntrospectionEnabled
     }
 
     // Thresholds
@@ -184,7 +186,9 @@ public class ProcessMonitor {
         }
 
         evaluateSystemMetrics(metrics: metrics, timestamp: timestamp)
-        evaluateDatastoreHealth(timestamp: timestamp)
+        if walMonitoringEnabled {
+            evaluateDatastoreHealth(timestamp: timestamp)
+        }
     }
 
     private func analyzeForLeaks() {

@@ -172,6 +172,10 @@ For first-time setup, create a keychain profile with `xcrun notarytool store-cre
 - The daemon relies on direct filesystem inspection of the SQLite WAL file. When the binary is executed inside a restrictive sandbox (such as the Codex harness), the `stat` call may fail and terminate the process before the first maintenance pass. Outside of the sandbox the daemon runs normally.
 - Maintenance scheduling inside the CLI is currently disabled in sandboxed environments; only retention trimming remains active. When testing locally, re-enable maintenance by running the CLI on the host or editing `Handlers.runDaemon` if deeper coverage is required.
 - LLDB sessions inherit the sandbox and will surface the same crash at `SQLiteStore.currentWALSizeBytes()`. Use system-level tests to validate WAL alerts instead of harness runs.
+- Runtime toggles:
+  - `MEMWATCH_FORCE_SANDBOX=1` forces sandbox mode (skips WAL and maintenance). Set to `0` to override automatic detection.
+  - `MEMWATCH_DISABLE_MAINTENANCE=1` (or `MEMWATCH_ENABLE_MAINTENANCE=1`) explicitly disables/enables the scheduler regardless of sandbox status.
+  - `MEMWATCH_DISABLE_WAL_INTROSPECTION=1` (or the enable counterpart) controls WAL size tracking and alerting.
 
 ---
 
